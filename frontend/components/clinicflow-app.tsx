@@ -5,6 +5,7 @@ import * as React from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { LandingPage } from "@/components/landing/landing-page";
 import { AuthModal } from "@/components/modals/auth-modal";
+import { ThemeProvider } from "@/components/theme-provider";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { getStoredSession, setStoredSession } from "@/lib/storage";
 import type { Session } from "@/lib/types";
@@ -43,8 +44,10 @@ function AppInner() {
 
 export function ClinicFlowApp() {
   return (
-    <ToastProvider>
-      <AppInner />
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
