@@ -1,6 +1,17 @@
 "use client";
 
-import { demoDashboard, demoQueue, demoSession } from "./mock-data";
+import {
+  addDemoWaitlist,
+  buildDemoSession,
+  cancelDemoAppointment,
+  completeDemoAppointment,
+  createDemoAppointment,
+  getDemoDashboard,
+  getDemoQueue,
+  getDemoSmartSlots,
+  updateDemoAppointment
+} from "./demo-store";
+import { demoDoctorId } from "./mock-data";
 import type { AppointmentType, DashboardData, QueueData, Session, WaitlistEntry } from "./types";
 import { todayIsoDate } from "./utils";
 
@@ -38,16 +49,7 @@ export async function signup(payload: {
       body: JSON.stringify(payload)
     });
   } catch {
-    return {
-      token: "demo-signup-token",
-      user: {
-        id: payload.role === "doctor" ? "demo-doctor" : demoSession.user.id,
-        name: payload.name,
-        email: payload.email,
-        role: payload.role,
-        specialization: payload.specialization
-      }
-    };
+    return buildDemoSession(payload.role, payload.email, payload.name, payload.specialization);
   }
 }
 
@@ -58,14 +60,12 @@ export async function login(payload: { email: string; password: string }) {
       body: JSON.stringify(payload)
     });
   } catch {
-    return {
-      ...demoSession,
-      user: {
-        ...demoSession.user,
-        email: payload.email,
-        role: payload.email.toLowerCase().includes("doctor") ? "doctor" : "receptionist"
-      }
-    };
+    const isDoctor = payload.email.toLowerCase().includes("doctor");
+    return buildDemoSession(
+      isDoctor ? "doctor" : "receptionist",
+      payload.email,
+      isDoctor ? "Dr. Aisha Patel" : "Maya Brooks"
+    );
   }
 }
 
@@ -77,7 +77,7 @@ export async function fetchDashboard(token: string, doctorId: string, date = tod
       token
     );
   } catch {
-    return demoDashboard;
+    return getDemoDashboard(date);
   }
 }
 
@@ -89,7 +89,7 @@ export async function fetchQueue(token: string, doctorId: string, date = todayIs
       token
     );
   } catch {
-    return demoQueue;
+    return getDemoQueue(date);
   }
 }
 
@@ -104,10 +104,14 @@ export async function createAppointment(
     notes?: string;
   }
 ) {
-  return request("/appointments/create", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, token);
+  try {
+    return await request("/appointments/create", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }, token);
+  } catch {
+    return createDemoAppointment({ ...payload, doctorId: payload.doctorId || demoDoctorId });
+  }
 }
 
 export async function updateAppointment(
@@ -120,20 +124,32 @@ export async function updateAppointment(
     status?: "scheduled" | "waiting" | "completed" | "cancelled";
   }
 ) {
-  return request("/appointments/update", {
-    method: "PUT",
-    body: JSON.stringify(payload)
-  }, token);
+  try {
+    return await request("/appointments/update", {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }, token);
+  } catch {
+    return updateDemoAppointment(payload);
+  }
 }
 
 export async function cancelAppointment(token: string, id: string) {
-  return request<{ waitlistSuggestions: WaitlistEntry[] }>(`/appointments/delete/${id}`, {
-    method: "DELETE"
-  }, token);
+  try {
+    return await request<{ waitlistSuggestions: WaitlistEntry[] }>(`/appointments/delete/${id}`, {
+      method: "DELETE"
+    }, token);
+  } catch {
+    return cancelDemoAppointment(id);
+  }
 }
 
 export async function completeAppointment(token: string, id: string) {
-  return request(`/queue/complete/${id}`, { method: "PATCH" }, token);
+  try {
+    return await request(`/queue/complete/${id}`, { method: "PATCH" }, token);
+  } catch {
+    return completeDemoAppointment(id);
+  }
 }
 
 export async function fetchSmartSlots(
@@ -142,14 +158,18 @@ export async function fetchSmartSlots(
   appointmentType: AppointmentType,
   date = todayIsoDate()
 ) {
-  return request<{
-    optimalSlot: { start: string; end: string; minutes: number } | null;
-    suggestions: string[];
-  }>(
-    `/appointments/smart-slots?doctorId=${doctorId}&appointmentType=${appointmentType}&date=${date}`,
-    undefined,
-    token
-  );
+  try {
+    return await request<{
+      optimalSlot: { start: string; end: string; minutes: number } | null;
+      suggestions: string[];
+    }>(
+      `/appointments/smart-slots?doctorId=${doctorId}&appointmentType=${appointmentType}&date=${date}`,
+      undefined,
+      token
+    );
+  } catch {
+    return getDemoSmartSlots(appointmentType, date);
+  }
 }
 
 export async function addToWaitlist(
@@ -162,8 +182,12 @@ export async function addToWaitlist(
     urgency: number;
   }
 ) {
-  return request("/waitlist/add", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, token);
+  try {
+    return await request("/waitlist/add", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }, token);
+  } catch {
+    return addDemoWaitlist(payload);
+  }
 }
