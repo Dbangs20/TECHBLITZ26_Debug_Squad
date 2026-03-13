@@ -48,10 +48,10 @@ export function AuthModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <div>
-          <div className="font-display text-3xl font-semibold text-slate-950">
+          <div className="font-display text-3xl font-semibold text-slate-950 dark:text-slate-50">
             {mode === "signup" ? "Create account" : "Welcome back"}
           </div>
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
             {mode === "signup" ? "Get started with ClinicFlow" : "Access your clinic dashboard"}
           </p>
         </div>
@@ -83,7 +83,7 @@ export function AuthModal({
                       className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
                         form.role === role
                           ? "border-sky-300 bg-sky-50 text-sky-700"
-                          : "border-white/70 bg-white/60 text-slate-600"
+                          : "border-white/70 bg-white/60 text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
                       }`}
                     >
                       {role === "receptionist" ? "Receptionist" : "Doctor"}
@@ -107,7 +107,7 @@ export function AuthModal({
             {loading ? "Please wait..." : mode === "signup" ? "Create Account" : "Login"}
           </Button>
         </form>
-        <div className="mt-4 text-center text-sm text-slate-500">
+        <div className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
           {mode === "signup" ? "Already have an account?" : "Need an account?"}{" "}
           <button
             type="button"
