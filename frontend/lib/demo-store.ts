@@ -279,7 +279,7 @@ function buildDashboard(state: DemoState, date: string): DashboardData {
   const balancedSchedule = Math.max(0, 100 - gaps.filter((gap) => gap.minutes >= 20).length * 7);
   const efficiencyScore = Math.max(
     0,
-    Math.min(100, Math.round((active.reduce((sum, appointment) => sum + appointment.duration, 0) / (480 || 1)) * 100 + 28 - overbookRisk))
+    Math.min(100, Math.round((active.reduce((sum, appointment) => sum + appointment.duration, 0) / 480) * 100 + 28 - overbookRisk))
   );
 
   return {

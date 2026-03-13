@@ -21,7 +21,7 @@ export function BookingModal({
   onOpenChange: (open: boolean) => void;
   token: string;
   doctorId: string;
-  onSuccess: (message: string) => void;
+  onSuccess: (message: string) => Promise<void> | void;
 }) {
   const [form, setForm] = React.useState({
     patientName: "",
@@ -55,7 +55,7 @@ export function BookingModal({
 
     try {
       await createAppointment(token, { ...form, doctorId });
-      onSuccess("Appointment booked successfully");
+      await onSuccess("Appointment booked successfully");
       onOpenChange(false);
       setForm({
         patientName: "",
@@ -81,10 +81,10 @@ export function BookingModal({
         appointmentType: form.appointmentType,
         urgency: form.urgency
       });
-      onSuccess("Patient added to waitlist");
+      await onSuccess("Patient added to waitlist");
       onOpenChange(false);
     } catch (error) {
-      onSuccess(error instanceof Error ? error.message : "Waitlist request failed");
+      await onSuccess(error instanceof Error ? error.message : "Waitlist request failed");
     }
   }
 

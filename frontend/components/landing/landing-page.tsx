@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ArrowRight, CalendarClock, Command, Sparkles, Stethoscope } from "lucide-react";
 import { motion } from "framer-motion";
 
+import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { ClinicFlowLogo } from "./logo";
@@ -11,6 +12,9 @@ export function LandingPage({
 }: {
   onGetStarted: () => void;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   return (
     <div className="relative overflow-hidden px-6 pb-12 pt-6 md:px-10">
       <div className="mx-auto max-w-7xl">
@@ -27,14 +31,14 @@ export function LandingPage({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
               <Sparkles className="h-4 w-4" />
               Schedule smarter, not harder
             </div>
-            <h1 className="max-w-3xl font-display text-5xl font-semibold tracking-tight text-slate-950 md:text-6xl">
+            <h1 className="max-w-3xl font-display text-5xl font-semibold tracking-tight text-slate-950 dark:text-slate-50 md:text-6xl">
               Keep every doctor’s day flowing with fewer gaps, fewer clashes, and better patient movement.
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
               ClinicFlow gives reception teams and doctors one shared system for booking, rescheduling,
               queue control, waitlist recovery, and real-time schedule optimization.
             </p>
@@ -43,7 +47,7 @@ export function LandingPage({
                 Start ClinicFlow
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-              <div className="rounded-full border border-white/70 bg-white/60 px-5 py-3 text-sm text-slate-600 shadow-glass backdrop-blur-xl">
+              <div className="rounded-full border border-white/70 bg-white/60 px-5 py-3 text-sm text-slate-600 shadow-glass backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/86 dark:text-slate-300">
                 Built for clinics, consultation centers, and doctor-led practices
               </div>
             </div>
@@ -57,12 +61,12 @@ export function LandingPage({
           >
             <div className="absolute -left-8 top-10 h-36 w-36 rounded-full bg-emerald-300/30 blur-3xl" />
             <div className="absolute -right-10 bottom-4 h-36 w-36 rounded-full bg-sky-300/30 blur-3xl" />
-            <Card className="relative space-y-6 p-7">
+            <Card className={`relative space-y-6 p-7 ${isDark ? "border-white/10 bg-slate-950/92" : ""}`}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <MiniMetric label="Appointments today" value="18" icon={<CalendarClock className="h-4 w-4" />} />
                 <MiniMetric label="Patients waiting" value="4" icon={<Stethoscope className="h-4 w-4" />} />
               </div>
-              <div className="rounded-[24px] border border-white/70 bg-slate-950 px-5 py-4 text-white">
+              <div className="rounded-[24px] border border-white/70 bg-slate-950 px-5 py-4 text-white dark:border-white/10">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-sm text-slate-300">Command Center</div>
@@ -76,10 +80,10 @@ export function LandingPage({
                   <div>View doctor dashboard</div>
                 </div>
               </div>
-              <div className="rounded-[24px] border border-amber-100 bg-amber-50 p-5">
-                <div className="text-sm font-medium text-amber-700">AI Smart Day Optimizer</div>
-                <div className="mt-2 text-3xl font-semibold text-slate-950">Efficiency 87%</div>
-                <div className="mt-2 text-sm text-slate-600">Fill 2:30 PM gap and move one later patient forward.</div>
+              <div className="rounded-[24px] border border-amber-100 bg-amber-50 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                <div className="text-sm font-medium text-amber-700 dark:text-amber-300">AI Smart Day Optimizer</div>
+                <div className="mt-2 text-3xl font-semibold text-slate-950 dark:text-slate-50">Efficiency 87%</div>
+                <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">Fill 2:30 PM gap and move one later patient forward.</div>
               </div>
             </Card>
           </motion.div>
@@ -114,12 +118,12 @@ function MiniMetric({
   icon: ReactNode;
 }) {
   return (
-    <div className="rounded-[24px] border border-white/70 bg-white/70 p-5">
-      <div className="flex items-center justify-between text-slate-500">
+    <div className="rounded-[24px] border border-white/70 bg-white/70 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
         <span className="text-sm">{label}</span>
         {icon}
       </div>
-      <div className="mt-4 font-display text-4xl font-semibold text-slate-950">{value}</div>
+      <div className="mt-4 font-display text-4xl font-semibold text-slate-950 dark:text-slate-50">{value}</div>
     </div>
   );
 }

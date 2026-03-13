@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { login, signup } from "@/lib/api";
 import type { Session } from "@/lib/types";
+import { useTheme } from "@/components/theme-provider";
 
 export function AuthModal({
   open,
@@ -18,6 +19,8 @@ export function AuthModal({
   onOpenChange: (open: boolean) => void;
   onAuthenticated: (session: Session) => void;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [mode, setMode] = React.useState<"login" | "signup">("signup");
   const [loading, setLoading] = React.useState(false);
   const [form, setForm] = React.useState({
@@ -46,7 +49,7 @@ export function AuthModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className={`max-w-md ${isDark ? "border-white/10 bg-slate-950/96" : "border-slate-200 bg-white/96"}`}>
         <div>
           <div className="font-display text-3xl font-semibold text-slate-950 dark:text-slate-50">
             {mode === "signup" ? "Create account" : "Welcome back"}
@@ -82,8 +85,8 @@ export function AuthModal({
                       onClick={() => setForm((current) => ({ ...current, role }))}
                       className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
                         form.role === role
-                          ? "border-sky-300 bg-sky-50 text-sky-700"
-                          : "border-white/70 bg-white/60 text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
+                          ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-400/40 dark:bg-sky-500/12 dark:text-sky-300"
+                          : "border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
                       }`}
                     >
                       {role === "receptionist" ? "Receptionist" : "Doctor"}
@@ -111,7 +114,7 @@ export function AuthModal({
           {mode === "signup" ? "Already have an account?" : "Need an account?"}{" "}
           <button
             type="button"
-            className="font-semibold text-sky-700"
+            className="font-semibold text-sky-700 dark:text-sky-300"
             onClick={() => setMode((current) => (current === "signup" ? "login" : "signup"))}
           >
             {mode === "signup" ? "Sign in" : "Create one"}
