@@ -35,19 +35,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 setMessages((current) => current.filter((item) => item.id !== message.id));
               }
             }}
-            className="mb-3 flex w-[360px] items-start justify-between rounded-3xl border border-white/70 bg-white/90 p-4 shadow-glass backdrop-blur-xl"
+            className="mb-3 flex w-[360px] items-start justify-between rounded-3xl border border-white/70 bg-white/90 p-4 shadow-glass backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/90"
           >
             <div>
-              <ToastPrimitive.Title className="font-semibold text-slate-900">
+              <ToastPrimitive.Title className="font-semibold text-slate-900 dark:text-slate-100">
                 {message.title}
               </ToastPrimitive.Title>
               {message.description ? (
-                <ToastPrimitive.Description className="mt-1 text-sm text-slate-600">
+                <ToastPrimitive.Description className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                   {message.description}
                 </ToastPrimitive.Description>
               ) : null}
             </div>
-            <ToastPrimitive.Close className="rounded-full p-1 text-slate-400 hover:bg-slate-100">
+            <ToastPrimitive.Close className="rounded-full p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900">
               <X className="h-4 w-4" />
             </ToastPrimitive.Close>
           </ToastPrimitive.Root>
