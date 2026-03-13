@@ -15,6 +15,8 @@ import {
 } from "../utils/schedule.js";
 import { AppError } from "../utils/http.js";
 
+const MAX_APPOINTMENTS_PER_DAY = 12;
+
 const appointmentSchema = z.object({
   patientName: z.string().min(2),
   patientPhone: z.string().min(8).optional(),
@@ -42,6 +44,12 @@ export async function createAppointment(request: Request, response: Response) {
   const payload = appointmentSchema.parse(request.body);
   const duration = APPOINTMENT_DURATIONS[payload.appointmentType];
   const appointments = await getDoctorDayAppointments(payload.doctorId, payload.date);
+  const occupancyAppointments = appointments.filter((appointment) => appointment.status !== "completed" && appointment.status !== "cancelled");
+
+  if (occupancyAppointments.length >= MAX_APPOINTMENTS_PER_DAY) {
+    throw new AppError(400, "Clinic has reached maximum appointment capacity for the day");
+  }
+
   const conflict = detectConflict(appointments, payload.time, duration);
 
   if (conflict) {
@@ -151,6 +159,7 @@ export async function getDashboard(request: Request, response: Response) {
   const appointments = await getDoctorDayAppointments(doctorId, date);
   const waitingPatients = appointments.filter((appointment) => appointment.status === "waiting");
   const scheduledPatients = appointments.filter((appointment) => appointment.status === "scheduled");
+  const occupancyAppointments = appointments.filter((appointment) => appointment.status !== "completed" && appointment.status !== "cancelled");
   const nextPatient = scheduledPatients[0] ?? null;
   const optimizer = analyzeScheduleEfficiency(appointments);
   const idleInsights = generateIdleTimeInsights(appointments);
@@ -165,6 +174,11 @@ export async function getDashboard(request: Request, response: Response) {
     nextPatient,
     waitingPatients,
     scheduleHealthScore: optimizer.efficiencyScore,
+    capacity: {
+      maxAppointments: MAX_APPOINTMENTS_PER_DAY,
+      bookedAppointments: occupancyAppointments.length,
+      remainingAppointments: Math.max(0, MAX_APPOINTMENTS_PER_DAY - occupancyAppointments.length)
+    },
     efficiency: optimizer,
     idleInsights,
     waitlist

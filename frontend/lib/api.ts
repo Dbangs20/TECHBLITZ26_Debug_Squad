@@ -15,10 +15,84 @@ import {
   updateDemoAppointment
 } from "./demo-store";
 import { demoDoctorId } from "./mock-data";
-import type { Appointment, AppointmentType, DashboardData, PatientVisit, QueueData, Session, WaitlistEntry } from "./types";
+import type { Appointment, AppointmentType, DashboardData, PatientSummary, PatientVisit, QueueData, Session, WaitlistEntry } from "./types";
 import { todayIsoDate } from "./utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+function normalizeDashboard(raw: Partial<DashboardData>): DashboardData {
+  const todaySchedule = (raw.todaySchedule ?? []) as Appointment[];
+  const waitlist = (raw.waitlist ?? []) as WaitlistEntry[];
+  const waitingPatients = raw.waitingPatients ?? todaySchedule.filter((appointment) => appointment.status === "waiting");
+  const nextPatient = raw.nextPatient ?? todaySchedule.find((appointment) => appointment.status === "scheduled") ?? null;
+  const occupancyAppointments = todaySchedule.filter((appointment) => appointment.status !== "completed" && appointment.status !== "cancelled");
+  const patientDirectory = (raw.patientDirectory ??
+    Object.values(
+      todaySchedule.reduce<Record<string, PatientSummary>>((accumulator, appointment) => {
+        accumulator[appointment.patientName] = {
+          name: appointment.patientName,
+          latestVisitDate: appointment.date,
+          totalVisits: Math.max(accumulator[appointment.patientName]?.totalVisits ?? 0, 1),
+          lastStatus: appointment.status,
+          doctorName: raw.doctor?.name ?? "Dr. Aisha Patel"
+        };
+        return accumulator;
+      }, {})
+    )) as PatientSummary[];
+
+  return {
+    doctor: raw.doctor ?? {
+      _id: demoDoctorId,
+      name: "Dr. Aisha Patel",
+      specialization: "Family Medicine"
+    },
+    todaySchedule,
+    nextPatient,
+    waitingPatients,
+    scheduleHealthScore: raw.scheduleHealthScore ?? 84,
+    capacity: raw.capacity ?? {
+      maxAppointments: 12,
+      bookedAppointments: occupancyAppointments.length,
+      remainingAppointments: Math.max(0, 12 - occupancyAppointments.length)
+    },
+    efficiency: raw.efficiency ?? {
+      efficiencyScore: raw.scheduleHealthScore ?? 84,
+      metrics: {
+        idleMinutes: 0,
+        overbookRisk: 0,
+        balancedSchedule: 92
+      },
+      suggestions: []
+    },
+    autopilotSuggestions: raw.autopilotSuggestions ?? [],
+    digitalTwin: raw.digitalTwin ?? {
+      consultationRoom: {
+        status: waitingPatients.length ? "consulting" : "available",
+        doctorName: raw.doctor?.name ?? "Dr. Aisha Patel",
+        patientName: waitingPatients[0]?.patientName ?? null
+      },
+      waitingArea: {
+        count: waitingPatients.length,
+        patients: waitingPatients.map((appointment) => appointment.patientName),
+        waitlistCount: waitlist.length
+      },
+      nextPatient: {
+        patientName: nextPatient?.patientName ?? null,
+        time: nextPatient?.time ?? null,
+        appointmentType: nextPatient?.appointmentType ?? null
+      },
+      queueStatus: {
+        nowServing: waitingPatients[0]?.patientName ?? null,
+        nextPatient: nextPatient?.patientName ?? null,
+        scheduledCount: todaySchedule.filter((appointment) => appointment.status === "scheduled").length,
+        completedCount: todaySchedule.filter((appointment) => appointment.status === "completed").length
+      }
+    },
+    patientDirectory,
+    idleInsights: raw.idleInsights ?? [],
+    waitlist
+  };
+}
 
 async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
@@ -74,11 +148,12 @@ export async function login(payload: { email: string; password: string }) {
 
 export async function fetchDashboard(token: string, doctorId: string, date = todayIsoDate()) {
   try {
-    return await request<DashboardData>(
+    const dashboard = await request<Partial<DashboardData>>(
       `/appointments/dashboard?doctorId=${doctorId}&date=${date}`,
       undefined,
       token
     );
+    return normalizeDashboard(dashboard);
   } catch {
     return getDemoDashboard(date);
   }

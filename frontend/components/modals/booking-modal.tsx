@@ -15,12 +15,21 @@ export function BookingModal({
   onOpenChange,
   token,
   doctorId,
+  initialValues,
   onSuccess
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   token: string;
   doctorId: string;
+  initialValues?: Partial<{
+    patientName: string;
+    patientPhone: string;
+    date: string;
+    time: string;
+    appointmentType: AppointmentType;
+    notes: string;
+  }> | null;
   onSuccess: (message: string) => Promise<void> | void;
 }) {
   const [form, setForm] = React.useState({
@@ -36,6 +45,21 @@ export function BookingModal({
   const [loading, setLoading] = React.useState(false);
   const [smartSlots, setSmartSlots] = React.useState<string[]>([]);
   const [optimalSlot, setOptimalSlot] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    if (!initialValues) return;
+
+    setForm((current) => ({
+      ...current,
+      patientName: initialValues.patientName ?? current.patientName,
+      patientPhone: initialValues.patientPhone ?? current.patientPhone,
+      date: initialValues.date ?? current.date,
+      time: initialValues.time ?? current.time,
+      appointmentType: initialValues.appointmentType ?? current.appointmentType,
+      notes: initialValues.notes ?? current.notes
+    }));
+  }, [initialValues, open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -106,7 +130,9 @@ export function BookingModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <div>
-          <div className="font-display text-3xl font-semibold text-slate-950 dark:text-slate-50">Book appointment</div>
+          <div className="font-display text-3xl font-semibold text-slate-950 dark:text-slate-50">
+            {initialValues?.appointmentType === "follow-up" ? "Pre-book follow-up" : "Book appointment"}
+          </div>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Conflict-safe scheduling with smart slot suggestions.</p>
         </div>
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>

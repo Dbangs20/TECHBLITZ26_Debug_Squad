@@ -109,6 +109,14 @@ export function DashboardShell({
   const [patientHistoryOpen, setPatientHistoryOpen] = React.useState(false);
   const [selectedPatient, setSelectedPatient] = React.useState<string>("");
   const [patientHistory, setPatientHistory] = React.useState<PatientVisit[]>([]);
+  const [bookingDefaults, setBookingDefaults] = React.useState<Partial<{
+    patientName: string;
+    patientPhone: string;
+    date: string;
+    time: string;
+    appointmentType: AppointmentType;
+    notes: string;
+  }> | null>(null);
 
   const doctorId = dashboard?.doctor?._id ?? (session.user.role === "doctor" ? session.user.id : demoDoctorId);
 
@@ -404,6 +412,7 @@ export function DashboardShell({
         onOpenChange={setBookingOpen}
         token={session.token}
         doctorId={doctorId}
+        initialValues={bookingDefaults}
         onSuccess={async (message) => {
           push({
             title: message,
@@ -411,13 +420,17 @@ export function DashboardShell({
           });
           await refresh();
           setActiveSection("schedule");
+          setBookingDefaults(null);
         }}
       />
       <CommandCenter
         open={commandOpen}
         onOpenChange={setCommandOpen}
         onAction={(action) => {
-          if (action === "book") setBookingOpen(true);
+          if (action === "book") {
+            setBookingDefaults(null);
+            setBookingOpen(true);
+          }
           if (action === "waitlist") setActiveSection("insights");
           if (action === "schedule") setActiveSection("schedule");
           if (action === "queue") setActiveSection("queue");
@@ -453,7 +466,10 @@ export function DashboardShell({
             autopilotEnabled={autopilotEnabled}
             onToggleAutopilot={() => setAutopilotEnabled((current) => !current)}
             onOpenCommand={() => setCommandOpen(true)}
-            onOpenBooking={() => setBookingOpen(true)}
+            onOpenBooking={() => {
+              setBookingDefaults(null);
+              setBookingOpen(true);
+            }}
             onOpenNotifications={() => setNotificationsOpen(true)}
             onLogout={onLogout}
           />
@@ -466,7 +482,10 @@ export function DashboardShell({
               queue={queue}
               dashboard={dashboard}
               autopilotEnabled={autopilotEnabled}
-              onOpenBooking={() => setBookingOpen(true)}
+              onOpenBooking={() => {
+                setBookingDefaults(null);
+                setBookingOpen(true);
+              }}
               onOpenCommand={() => setCommandOpen(true)}
               onOpenSection={setActiveSection}
               onApplySuggestion={handleAutopilotApply}
@@ -485,6 +504,19 @@ export function DashboardShell({
               onCancel={cancel}
               onSmartMove={smartReschedule}
               onOpenPatientHistory={openPatientHistory}
+              onPrebookFollowUp={(appointment) => {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 7);
+                setBookingDefaults({
+                  patientName: appointment.patientName,
+                  patientPhone: appointment.patientPhone,
+                  date: tomorrow.toISOString().slice(0, 10),
+                  time: "14:00",
+                  appointmentType: "follow-up",
+                  notes: `Follow-up visit pre-booked after ${appointment.date} ${appointment.appointmentType}.`
+                });
+                setBookingOpen(true);
+              }}
             />
           ) : null}
 
@@ -814,7 +846,8 @@ function ScheduleView({
   onMarkComplete,
   onCancel,
   onSmartMove,
-  onOpenPatientHistory
+  onOpenPatientHistory,
+  onPrebookFollowUp
 }: {
   session: Session;
   appointments: Appointment[];
@@ -825,6 +858,7 @@ function ScheduleView({
   onCancel: (id: string) => void;
   onSmartMove: (id: string, type: AppointmentType, date: string) => void;
   onOpenPatientHistory: (patientName: string) => void;
+  onPrebookFollowUp: (appointment: Appointment) => void;
 }) {
   function openWhatsApp(appointment: Appointment) {
     if (!appointment.patientPhone) return;
@@ -895,6 +929,15 @@ function ScheduleView({
                 ) : null}
                 {session.user.role === "receptionist" && appointment.status !== "cancelled" ? (
                   <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => onPrebookFollowUp(appointment)}
+                      className="hover:-translate-y-0.5"
+                    >
+                      <History className="mr-2 h-4 w-4" />
+                      Pre-book follow-up
+                    </Button>
                     {appointment.patientPhone ? (
                       <Button
                         size="sm"

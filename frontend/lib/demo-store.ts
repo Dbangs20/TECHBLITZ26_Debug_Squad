@@ -496,6 +496,7 @@ function buildAutopilotSuggestions(state: DemoState, date: string) {
 function buildDashboard(state: DemoState, date: string): DashboardData {
   const schedule = getDayAppointments(state, date);
   const active = getActiveAppointments(state, date);
+  const occupancyAppointments = active.filter((appointment) => appointment.status !== "completed");
   const waitingPatients = active.filter((appointment) => appointment.status === "waiting");
   const nextPatient =
     active.find((appointment) => appointment.status === "scheduled") ??
@@ -518,8 +519,8 @@ function buildDashboard(state: DemoState, date: string): DashboardData {
     scheduleHealthScore: efficiencyScore,
     capacity: {
       maxAppointments: MAX_APPOINTMENTS_PER_DAY,
-      bookedAppointments: active.length,
-      remainingAppointments: Math.max(0, MAX_APPOINTMENTS_PER_DAY - active.length)
+      bookedAppointments: occupancyAppointments.length,
+      remainingAppointments: Math.max(0, MAX_APPOINTMENTS_PER_DAY - occupancyAppointments.length)
     },
     efficiency: {
       efficiencyScore,
@@ -580,7 +581,8 @@ export function createDemoAppointment(payload: {
   const state = getDemoState();
   const duration = durations[payload.appointmentType];
   const appointments = getActiveAppointments(state, payload.date);
-  if (appointments.length >= MAX_APPOINTMENTS_PER_DAY) {
+  const occupancyAppointments = appointments.filter((appointment) => appointment.status !== "completed");
+  if (occupancyAppointments.length >= MAX_APPOINTMENTS_PER_DAY) {
     throw new Error("Clinic has reached maximum appointment capacity for the day");
   }
   const conflict = findConflict(appointments, payload.time, duration);
