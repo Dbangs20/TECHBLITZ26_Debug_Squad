@@ -92,8 +92,8 @@ export function BookingModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <div>
-          <div className="font-display text-3xl font-semibold text-slate-950">Book appointment</div>
-          <p className="mt-2 text-sm text-slate-500">Conflict-safe scheduling with smart slot suggestions.</p>
+          <div className="font-display text-3xl font-semibold text-slate-950 dark:text-slate-50">Book appointment</div>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Conflict-safe scheduling with smart slot suggestions.</p>
         </div>
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
           <div className="space-y-2 md:col-span-2">
@@ -119,7 +119,7 @@ export function BookingModal({
                   className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
                     form.appointmentType === type
                       ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                      : "border-white/70 bg-white/60 text-slate-600"
+                      : "border-white/70 bg-white/60 text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
                   }`}
                 >
                   {type}
@@ -127,10 +127,10 @@ export function BookingModal({
               ))}
             </div>
           </div>
-          <div className="space-y-3 rounded-[24px] border border-white/70 bg-slate-50/80 p-4">
+          <div className="space-y-3 rounded-[24px] border border-white/70 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/60">
             <div>
-              <div className="text-sm font-semibold text-slate-900">Smart slot suggestion</div>
-              <div className="mt-1 text-sm text-slate-600">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Smart slot suggestion</div>
+              <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {optimalSlot ?? "No optimized gap detected yet."}
               </div>
             </div>
@@ -140,7 +140,7 @@ export function BookingModal({
                   key={slot}
                   type="button"
                   onClick={() => setForm((current) => ({ ...current, time: slot }))}
-                  className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-slate-700 ring-1 ring-slate-200"
+                  className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-slate-700 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-200 dark:ring-slate-700"
                 >
                   {formatTime(slot)}
                 </button>
