@@ -7,14 +7,21 @@ import {
   Bell,
   CalendarClock,
   CalendarPlus,
+  CalendarRange,
   CalendarX2,
   ChartColumn,
   CheckCircle2,
   ClipboardList,
   Command,
+  Cpu,
+  Eye,
+  History,
+  Hospital,
   LogOut,
   Monitor,
   MoonStar,
+  MoveRight,
+  ScanSearch,
   Sparkles,
   Stethoscope,
   SunMedium,
@@ -39,33 +46,48 @@ import {
 } from "recharts";
 
 import {
+  applyAutopilotSuggestion,
   cancelAppointment,
   completeAppointment,
   fetchDashboard,
+  fetchPatientHistory,
   fetchQueue,
   fetchSmartSlots,
+  ignoreAutopilotSuggestion,
   updateAppointment
 } from "@/lib/api";
 import { demoDoctorId } from "@/lib/mock-data";
-import type { Appointment, DashboardData, QueueData, Session } from "@/lib/types";
+import type {
+  Appointment,
+  AppointmentType,
+  AutopilotSuggestion,
+  DashboardData,
+  PatientVisit,
+  QueueData,
+  Session
+} from "@/lib/types";
 import { formatTime, todayIsoDate } from "@/lib/utils";
 import { ClinicFlowLogo } from "@/components/landing/logo";
-import { useTheme } from "@/components/theme-provider";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { BookingModal } from "@/components/modals/booking-modal";
+import { useTheme } from "@/components/theme-provider";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 
 const menu = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "schedule", label: "Schedule", icon: ClipboardList },
+  { id: "patients", label: "Patients", icon: UserRound },
   { id: "queue", label: "Queue", icon: Users },
+  { id: "live-clinic", label: "Live Clinic", icon: Hospital },
   { id: "insights", label: "Insights", icon: Sparkles },
   { id: "analytics", label: "Analytics", icon: ChartColumn }
 ] as const;
 
 type SectionId = (typeof menu)[number]["id"];
+type CommandAction = "book" | "schedule" | "waitlist" | "queue" | "patients" | "live-clinic";
 
 export function DashboardShell({
   session,
@@ -74,14 +96,19 @@ export function DashboardShell({
   session: Session;
   onLogout: () => void;
 }) {
-  const { push } = useToast();
   const { theme, toggleTheme } = useTheme();
+  const { push } = useToast();
   const [dashboard, setDashboard] = React.useState<DashboardData | null>(null);
   const [queue, setQueue] = React.useState<QueueData | null>(null);
   const [bookingOpen, setBookingOpen] = React.useState(false);
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
   const [activeSection, setActiveSection] = React.useState<SectionId>("overview");
+  const [autopilotEnabled, setAutopilotEnabled] = React.useState(true);
+  const [patientHistoryOpen, setPatientHistoryOpen] = React.useState(false);
+  const [selectedPatient, setSelectedPatient] = React.useState<string>("");
+  const [patientHistory, setPatientHistory] = React.useState<PatientVisit[]>([]);
+
   const doctorId = dashboard?.doctor?._id ?? (session.user.role === "doctor" ? session.user.id : demoDoctorId);
 
   const refresh = React.useCallback(async () => {
@@ -109,14 +136,31 @@ export function DashboardShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  async function openPatientHistory(patientName: string) {
+    try {
+      const history = await fetchPatientHistory(session.token, patientName);
+      setSelectedPatient(patientName);
+      setPatientHistory(history);
+      setPatientHistoryOpen(true);
+    } catch (error) {
+      push({
+        title: "Unable to load patient history",
+        description: error instanceof Error ? error.message : "Try again"
+      });
+    }
+  }
+
   async function markComplete(id: string) {
     try {
       await completeAppointment(session.token, id);
-      push({ title: "Appointment completed", description: "Queue and schedule updated." });
+      push({ title: "Appointment completed", description: "Queue and clinic twin updated." });
       await refresh();
-      setActiveSection("queue");
+      setActiveSection("live-clinic");
     } catch (error) {
-      push({ title: "Unable to complete appointment", description: error instanceof Error ? error.message : "Try again" });
+      push({
+        title: "Unable to complete appointment",
+        description: error instanceof Error ? error.message : "Try again"
+      });
     }
   }
 
@@ -130,20 +174,26 @@ export function DashboardShell({
           : "No waitlist suggestions available."
       });
       await refresh();
-      setActiveSection("schedule");
+      setActiveSection("insights");
     } catch (error) {
-      push({ title: "Unable to cancel appointment", description: error instanceof Error ? error.message : "Try again" });
+      push({
+        title: "Unable to cancel appointment",
+        description: error instanceof Error ? error.message : "Try again"
+      });
     }
   }
 
-  async function smartReschedule(id: string, appointmentType: "consultation" | "follow-up" | "emergency", date: string) {
+  async function smartReschedule(id: string, appointmentType: AppointmentType, date: string) {
     try {
       const result = await fetchSmartSlots(session.token, doctorId, appointmentType, date);
       const currentAppointment = dashboard?.todaySchedule.find((appointment) => appointment._id === id);
       const nextSlot = result.suggestions.find((slot) => slot !== currentAppointment?.time) ?? result.suggestions[0];
 
       if (!nextSlot) {
-        push({ title: "No better slot found", description: "ClinicFlow did not find a valid reschedule slot." });
+        push({
+          title: "No better slot found",
+          description: "ClinicFlow did not find a valid reschedule slot."
+        });
         return;
       }
 
@@ -152,16 +202,52 @@ export function DashboardShell({
         time: nextSlot,
         appointmentType
       });
-      push({ title: "Appointment rescheduled", description: `Moved to ${formatTime(nextSlot)}.` });
+      push({
+        title: "Appointment rescheduled",
+        description: `Moved to ${formatTime(nextSlot)}.`
+      });
       await refresh();
       setActiveSection("schedule");
     } catch (error) {
-      push({ title: "Unable to reschedule", description: error instanceof Error ? error.message : "Try again" });
+      push({
+        title: "Unable to reschedule",
+        description: error instanceof Error ? error.message : "Try again"
+      });
     }
   }
 
+  async function handleAutopilotApply(suggestionId: string) {
+    try {
+      await applyAutopilotSuggestion(session.token, suggestionId);
+      push({
+        title: "Autopilot fix applied",
+        description: "Schedule and live clinic state were updated automatically."
+      });
+      await refresh();
+      setActiveSection("schedule");
+    } catch (error) {
+      push({
+        title: "Unable to apply autopilot fix",
+        description: error instanceof Error ? error.message : "Try again"
+      });
+    }
+  }
+
+  async function handleAutopilotIgnore(suggestionId: string) {
+    await ignoreAutopilotSuggestion(session.token, suggestionId);
+    push({
+      title: "Suggestion ignored",
+      description: "Clinic Autopilot will no longer surface that recommendation today."
+    });
+    await refresh();
+  }
+
   if (!dashboard || !queue) {
-    return <div className="px-6 py-16 text-center text-slate-500 dark:text-slate-400">Loading ClinicFlow workspace...</div>;
+    return (
+      <div className="px-6 py-16 text-center text-slate-500 dark:text-slate-400">
+        Loading ClinicFlow workspace...
+      </div>
+    );
   }
 
   const activeAppointments = dashboard.todaySchedule.filter((appointment) => appointment.status !== "cancelled");
@@ -173,19 +259,68 @@ export function DashboardShell({
     Math.round((activeAppointments.reduce((sum, appointment) => sum + appointment.duration, 0) / 480) * 100)
   );
 
-  const topCards = session.user.role === "doctor"
-    ? [
-        { label: "Next Patient", value: dashboard.nextPatient ? formatTime(dashboard.nextPatient.time) : "No queue", detail: dashboard.nextPatient?.patientName ?? "Day is clear", icon: AlarmClock, accent: "cyan" },
-        { label: "Total Patients Today", value: String(activeAppointments.length), detail: `${completedCount} completed`, icon: Stethoscope, accent: "emerald" },
-        { label: "Waiting Queue", value: String(queue.waitingCount), detail: queue.nowServing?.patientName ?? "Queue clear", icon: Users, accent: "amber" },
-        { label: "Health Score", value: `${dashboard.scheduleHealthScore}%`, detail: `${dashboard.efficiency.metrics.idleMinutes} idle mins`, icon: TrendingUp, accent: "violet" }
-      ]
-    : [
-        { label: "Today's Appointments", value: String(activeAppointments.length), detail: `${completedCount} completed`, icon: CalendarClock, accent: "cyan" },
-        { label: "Patients Waiting", value: String(queue.waitingCount), detail: queue.nowServing?.patientName ?? "Queue clear", icon: Users, accent: "emerald" },
-        { label: "Available Slots", value: String(availableSlots), detail: `${dashboard.efficiency.metrics.idleMinutes} idle mins`, icon: Waves, accent: "teal" },
-        { label: "Schedule Efficiency", value: `${dashboard.scheduleHealthScore}%`, detail: `${scheduledCount} still to serve`, icon: ChartColumn, accent: "violet" }
-      ];
+  const topCards =
+    session.user.role === "doctor"
+      ? [
+          {
+            label: "Next Patient",
+            value: dashboard.nextPatient ? formatTime(dashboard.nextPatient.time) : "No queue",
+            detail: dashboard.nextPatient?.patientName ?? "Day is clear",
+            icon: AlarmClock,
+            accent: "cyan"
+          },
+          {
+            label: "Total Patients Today",
+            value: String(activeAppointments.length),
+            detail: `${completedCount} completed`,
+            icon: Stethoscope,
+            accent: "emerald"
+          },
+          {
+            label: "Waiting Queue",
+            value: String(queue.waitingCount),
+            detail: queue.nowServing?.patientName ?? "Queue clear",
+            icon: Users,
+            accent: "amber"
+          },
+          {
+            label: "Health Score",
+            value: `${dashboard.scheduleHealthScore}%`,
+            detail: `${dashboard.efficiency.metrics.idleMinutes} idle mins`,
+            icon: TrendingUp,
+            accent: "violet"
+          }
+        ]
+      : [
+          {
+            label: "Today's Appointments",
+            value: String(activeAppointments.length),
+            detail: `${completedCount} completed`,
+            icon: CalendarClock,
+            accent: "cyan"
+          },
+          {
+            label: "Patients Waiting",
+            value: String(queue.waitingCount),
+            detail: queue.nowServing?.patientName ?? "Queue clear",
+            icon: Users,
+            accent: "emerald"
+          },
+          {
+            label: "Available Slots",
+            value: String(availableSlots),
+            detail: `${dashboard.efficiency.metrics.idleMinutes} idle mins`,
+            icon: Waves,
+            accent: "teal"
+          },
+          {
+            label: "Schedule Efficiency",
+            value: `${dashboard.scheduleHealthScore}%`,
+            detail: `${scheduledCount} still to serve`,
+            icon: ChartColumn,
+            accent: "violet"
+          }
+        ];
 
   const notifications = [
     {
@@ -211,8 +346,8 @@ export function DashboardShell({
     },
     {
       id: "n4",
-      title: "Reminder sent",
-      description: queue.nextPatient ? `Reminder sent to ${queue.nextPatient.patientName} for ${formatTime(queue.nextPatient.time)}.` : "No reminder pending right now.",
+      title: "Autopilot recommendations",
+      description: `${dashboard.autopilotSuggestions.length} scheduling fix${dashboard.autopilotSuggestions.length === 1 ? "" : "es"} available right now.`,
       accent: "violet",
       time: "18 mins ago"
     }
@@ -245,7 +380,10 @@ export function DashboardShell({
         token={session.token}
         doctorId={doctorId}
         onSuccess={async (message) => {
-          push({ title: message, description: "Dashboard metrics and schedule were refreshed." });
+          push({
+            title: message,
+            description: "Dashboard metrics and schedule were refreshed."
+          });
           await refresh();
           setActiveSection("schedule");
         }}
@@ -258,6 +396,8 @@ export function DashboardShell({
           if (action === "waitlist") setActiveSection("insights");
           if (action === "schedule") setActiveSection("schedule");
           if (action === "queue") setActiveSection("queue");
+          if (action === "patients") setActiveSection("patients");
+          if (action === "live-clinic") setActiveSection("live-clinic");
         }}
       />
       <NotificationsPanel
@@ -265,15 +405,28 @@ export function DashboardShell({
         onOpenChange={setNotificationsOpen}
         notifications={notifications}
       />
+      <PatientHistoryModal
+        open={patientHistoryOpen}
+        onOpenChange={setPatientHistoryOpen}
+        patientName={selectedPatient}
+        visits={patientHistory}
+      />
 
-      <div className="mx-auto grid max-w-[1540px] gap-6 lg:grid-cols-[124px_minmax(0,1fr)] xl:gap-8">
-        <Sidebar theme={theme} toggleTheme={toggleTheme} activeSection={activeSection} onChange={setActiveSection} />
+      <div className="mx-auto grid max-w-[1540px] gap-6 lg:grid-cols-[128px_minmax(0,1fr)] xl:gap-8">
+        <Sidebar
+          theme={theme}
+          toggleTheme={toggleTheme}
+          activeSection={activeSection}
+          onChange={setActiveSection}
+        />
 
         <div className="space-y-6 xl:space-y-8">
           <HeaderBar
             session={session}
             dashboard={dashboard}
             notificationCount={notifications.length}
+            autopilotEnabled={autopilotEnabled}
+            onToggleAutopilot={() => setAutopilotEnabled((current) => !current)}
             onOpenCommand={() => setCommandOpen(true)}
             onOpenBooking={() => setBookingOpen(true)}
             onOpenNotifications={() => setNotificationsOpen(true)}
@@ -287,9 +440,12 @@ export function DashboardShell({
               notifications={notifications.slice(0, 3)}
               queue={queue}
               dashboard={dashboard}
+              autopilotEnabled={autopilotEnabled}
               onOpenBooking={() => setBookingOpen(true)}
               onOpenCommand={() => setCommandOpen(true)}
               onOpenSection={setActiveSection}
+              onApplySuggestion={handleAutopilotApply}
+              onIgnoreSuggestion={handleAutopilotIgnore}
             />
           ) : null}
 
@@ -302,11 +458,36 @@ export function DashboardShell({
               onMarkComplete={markComplete}
               onCancel={cancel}
               onSmartMove={smartReschedule}
+              onOpenPatientHistory={openPatientHistory}
+            />
+          ) : null}
+
+          {activeSection === "patients" ? (
+            <PatientsView
+              dashboard={dashboard}
+              onOpenPatientHistory={openPatientHistory}
             />
           ) : null}
 
           {activeSection === "queue" ? <QueueView queue={queue} /> : null}
-          {activeSection === "insights" ? <InsightsView dashboard={dashboard} /> : null}
+
+          {activeSection === "live-clinic" ? (
+            <LiveClinicView
+              dashboard={dashboard}
+              queue={queue}
+              onOpenPatientHistory={openPatientHistory}
+            />
+          ) : null}
+
+          {activeSection === "insights" ? (
+            <InsightsView
+              dashboard={dashboard}
+              autopilotEnabled={autopilotEnabled}
+              onApplySuggestion={handleAutopilotApply}
+              onIgnoreSuggestion={handleAutopilotIgnore}
+            />
+          ) : null}
+
           {activeSection === "analytics" ? (
             <AnalyticsView
               utilizationRate={utilizationRate}
@@ -336,15 +517,24 @@ function Sidebar({
   const isDark = theme === "dark";
 
   return (
-    <Card className={`sticky top-4 flex h-[calc(100vh-2rem)] flex-col items-center gap-6 overflow-hidden p-4 shadow-[0_25px_70px_rgba(14,165,233,0.12)] ${
-      isDark
-        ? "border border-white/10 bg-slate-950/92 text-white shadow-[0_30px_80px_rgba(2,6,23,0.28)]"
-        : "border border-white/70 bg-gradient-to-b from-emerald-50/95 via-sky-50/95 to-white/95 text-slate-950"
-    }`}>
-      <div className={`absolute inset-0 ${isDark ? "bg-gradient-to-b from-white/[0.03] via-transparent to-transparent" : "bg-gradient-to-b from-emerald-300/12 via-transparent to-sky-300/12"}`} />
+    <Card
+      className={`sticky top-4 flex h-[calc(100vh-2rem)] flex-col items-center gap-6 overflow-hidden p-4 shadow-[0_30px_80px_rgba(2,6,23,0.22)] ${
+        isDark
+          ? "border border-white/10 bg-slate-950/92 text-white"
+          : "border border-white/70 bg-gradient-to-b from-emerald-50/95 via-sky-50/94 to-white/95 text-slate-950"
+      }`}
+    >
+      <div
+        className={`absolute inset-0 ${
+          isDark
+            ? "bg-gradient-to-b from-white/[0.03] via-transparent to-cyan-500/[0.02]"
+            : "bg-gradient-to-b from-emerald-300/12 via-transparent to-sky-300/12"
+        }`}
+      />
       <div className="relative">
         <ClinicFlowLogo compact />
       </div>
+
       <div className="relative mt-1 flex w-full flex-col gap-2.5">
         {menu.map((item) => {
           const isActive = activeSection === item.id;
@@ -354,16 +544,21 @@ function Sidebar({
               onClick={() => onChange(item.id)}
               className={`group flex flex-col items-center gap-2 rounded-[22px] px-2 py-3 transition-all duration-200 ${
                 isActive
-                  ? "bg-slate-950 text-white shadow-glass dark:bg-white/12 dark:text-white"
+                  ? "bg-slate-950 text-white shadow-[0_18px_45px_rgba(2,6,23,0.24)] dark:bg-white/10 dark:text-white"
                   : "text-slate-500 hover:-translate-y-0.5 hover:bg-white hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/8 dark:hover:text-white"
               }`}
             >
-              <item.icon className={`h-5 w-5 transition-transform ${isActive ? "scale-110" : "group-hover:scale-110"}`} />
+              <item.icon
+                className={`h-5 w-5 transition-transform ${
+                  isActive ? "scale-110" : "group-hover:scale-110"
+                }`}
+              />
               <span className="text-[10px] font-semibold uppercase tracking-[0.2em]">{item.label}</span>
             </button>
           );
         })}
       </div>
+
       <div className="relative mt-auto w-full rounded-[22px] border border-slate-200 bg-slate-950 p-3 text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-slate-950/96">
         <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Mode</div>
         <button
@@ -382,6 +577,8 @@ function HeaderBar({
   session,
   dashboard,
   notificationCount,
+  autopilotEnabled,
+  onToggleAutopilot,
   onOpenCommand,
   onOpenBooking,
   onOpenNotifications,
@@ -390,6 +587,8 @@ function HeaderBar({
   session: Session;
   dashboard: DashboardData;
   notificationCount: number;
+  autopilotEnabled: boolean;
+  onToggleAutopilot: () => void;
   onOpenCommand: () => void;
   onOpenBooking: () => void;
   onOpenNotifications: () => void;
@@ -411,6 +610,9 @@ function HeaderBar({
           </CardDescription>
         </div>
         <div className="relative flex flex-wrap items-center gap-3">
+          {session.user.role === "receptionist" ? (
+            <AutopilotToggle enabled={autopilotEnabled} onToggle={onToggleAutopilot} />
+          ) : null}
           <Button variant="secondary" onClick={onOpenCommand} className="hover:-translate-y-0.5">
             <Command className="mr-2 h-4 w-4" />
             Command Center
@@ -420,7 +622,9 @@ function HeaderBar({
             className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/6 dark:text-white dark:hover:bg-white/10"
           >
             <Bell className="h-5 w-5" />
-            {notificationCount ? <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
+            {notificationCount ? (
+              <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-rose-500" />
+            ) : null}
           </button>
           {session.user.role === "receptionist" ? (
             <Button onClick={onOpenBooking} className="hover:-translate-y-0.5">
@@ -428,7 +632,11 @@ function HeaderBar({
               Book Appointment
             </Button>
           ) : null}
-          <Button variant="ghost" onClick={onLogout} className="hover:-translate-y-0.5 dark:text-white dark:hover:bg-white/8 dark:hover:text-white">
+          <Button
+            variant="ghost"
+            onClick={onLogout}
+            className="hover:-translate-y-0.5 dark:text-white dark:hover:bg-white/8 dark:hover:text-white"
+          >
             <LogOut className="mr-2 h-4 w-4" />
             Logout
           </Button>
@@ -444,18 +652,30 @@ function OverviewView({
   notifications,
   queue,
   dashboard,
+  autopilotEnabled,
   onOpenBooking,
   onOpenCommand,
-  onOpenSection
+  onOpenSection,
+  onApplySuggestion,
+  onIgnoreSuggestion
 }: {
   session: Session;
-  topCards: Array<{ label: string; value: string; detail: string; icon: React.ComponentType<{ className?: string }>; accent: string }>;
+  topCards: Array<{
+    label: string;
+    value: string;
+    detail: string;
+    icon: React.ComponentType<{ className?: string }>;
+    accent: string;
+  }>;
   notifications: Array<{ id: string; title: string; description: string; accent: string; time: string }>;
   queue: QueueData;
   dashboard: DashboardData;
+  autopilotEnabled: boolean;
   onOpenBooking: () => void;
   onOpenCommand: () => void;
   onOpenSection: (section: SectionId) => void;
+  onApplySuggestion: (suggestionId: string) => void;
+  onIgnoreSuggestion: (suggestionId: string) => void;
 }) {
   return (
     <div className="space-y-6 xl:space-y-8">
@@ -467,21 +687,25 @@ function OverviewView({
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <PanelCard className="p-6">
-          <SectionPill icon={Sparkles} tone="sky">Clinic snapshot</SectionPill>
+          <SectionPill icon={Sparkles} tone="sky">
+            Clinic snapshot
+          </SectionPill>
           <CardTitle className="mt-4 text-slate-950 dark:text-white">Run the clinic from one workspace</CardTitle>
           <CardDescription className="mt-2 text-slate-600 dark:text-slate-400">
-            Reception can book, reschedule, and recover slots while doctors stay aligned with the live queue.
+            Reception can book, reschedule, recover slots, and let Clinic Autopilot surface the highest-value fix automatically.
           </CardDescription>
           <div className="mt-6 grid gap-3 md:grid-cols-2">
             <ActionCard title="Book appointment" description="Open the booking modal with smart slot suggestions." icon={CalendarPlus} onClick={onOpenBooking} />
             <ActionCard title="Open command center" description="Trigger search-driven actions with Ctrl + K." icon={Command} onClick={onOpenCommand} />
-            <ActionCard title="View live queue" description="Open the large clinic display mode for waiting patients." icon={Monitor} onClick={() => onOpenSection("queue")} />
-            <ActionCard title="Open analytics" description="Jump into charts and performance trends." icon={ChartColumn} onClick={() => onOpenSection("analytics")} />
+            <ActionCard title="View live queue" description="Open the clinic display mode for waiting patients." icon={Monitor} onClick={() => onOpenSection("queue")} />
+            <ActionCard title="Open digital twin" description="See the clinic's operational state update in real time." icon={Cpu} onClick={() => onOpenSection("live-clinic")} />
           </div>
         </PanelCard>
 
         <PanelCard className="p-6">
-          <SectionPill icon={Bell} tone="violet">Notifications</SectionPill>
+          <SectionPill icon={Bell} tone="violet">
+            Notifications
+          </SectionPill>
           <CardTitle className="mt-4 text-slate-950 dark:text-white">Today’s activity feed</CardTitle>
           <div className="mt-5 space-y-3">
             {notifications.map((notification) => (
@@ -493,42 +717,59 @@ function OverviewView({
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <PanelCard className="p-6">
-          <SectionPill icon={ClipboardList} tone="teal">Schedule preview</SectionPill>
-          <CardTitle className="mt-4 text-slate-950 dark:text-white">What’s happening next</CardTitle>
-          <div className="mt-5 space-y-3">
-            {dashboard.todaySchedule.slice(0, 4).map((appointment) => (
-              <div
-                key={appointment._id}
-                className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 transition duration-200 hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="font-semibold text-slate-950 dark:text-white">{appointment.patientName}</div>
-                    <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                      {formatTime(appointment.time)} • {appointment.appointmentType}
-                    </div>
-                  </div>
-                  <StatusBadge status={appointment.status} />
-                </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <SectionPill icon={ScanSearch} tone="emerald">
+                Clinic Autopilot
+              </SectionPill>
+              <CardTitle className="mt-4 text-slate-950 dark:text-white">Optimization actions ready to deploy</CardTitle>
+            </div>
+            {session.user.role === "receptionist" ? (
+              <AutopilotToggle enabled={autopilotEnabled} onToggle={() => onOpenSection("overview")} visualOnly />
+            ) : null}
+          </div>
+          <div className="mt-5">
+            {!autopilotEnabled ? (
+              <MutedState
+                icon={Cpu}
+                title="Autopilot is off"
+                description="Switch it on from the header to continuously scan for idle gaps, waitlist fills, and move-earlier opportunities."
+              />
+            ) : dashboard.autopilotSuggestions.length ? (
+              <div className="space-y-3">
+                {dashboard.autopilotSuggestions.map((suggestion) => (
+                  <AutopilotSuggestionCard
+                    key={suggestion.id}
+                    suggestion={suggestion}
+                    onApply={() => onApplySuggestion(suggestion.id)}
+                    onIgnore={() => onIgnoreSuggestion(suggestion.id)}
+                  />
+                ))}
               </div>
-            ))}
+            ) : (
+              <MutedState
+                icon={CheckCircle2}
+                title="No urgent autopilot fixes"
+                description="The schedule is balanced right now. ClinicFlow is still monitoring for new changes."
+              />
+            )}
           </div>
         </PanelCard>
 
         <PanelCard className="p-6">
-          <SectionPill icon={Users} tone="amber">Queue pulse</SectionPill>
+          <SectionPill icon={Users} tone="amber">
+            Queue pulse
+          </SectionPill>
           <CardTitle className="mt-4 text-slate-950 dark:text-white">Live queue summary</CardTitle>
           <div className="mt-5 space-y-3">
             <QueueMiniCard label="Now Serving" value={queue.nowServing?.patientName ?? "No active patient"} />
             <QueueMiniCard label="Next Patient" value={queue.nextPatient?.patientName ?? "Queue clear"} />
             <QueueMiniCard label="Waiting Count" value={String(queue.waitingCount)} strong />
           </div>
-          {session.user.role === "receptionist" ? (
-            <Button className="mt-5 w-full hover:-translate-y-0.5" variant="secondary" onClick={onOpenBooking}>
-              <CalendarPlus className="mr-2 h-4 w-4" />
-              Add another booking
-            </Button>
-          ) : null}
+          <div className="mt-5 grid gap-3">
+            <ActionLine icon={CalendarRange} title="Patient history ready" description={`${dashboard.patientDirectory.length} patients available in the timeline view.`} onClick={() => onOpenSection("patients")} />
+            <ActionLine icon={Hospital} title="Digital twin online" description="Open the live clinic dashboard to present room, waiting area, and queue state." onClick={() => onOpenSection("live-clinic")} />
+          </div>
         </PanelCard>
       </div>
     </div>
@@ -542,7 +783,8 @@ function ScheduleView({
   idleInsights,
   onMarkComplete,
   onCancel,
-  onSmartMove
+  onSmartMove,
+  onOpenPatientHistory
 }: {
   session: Session;
   appointments: Appointment[];
@@ -550,17 +792,20 @@ function ScheduleView({
   idleInsights: Array<{ title: string; actions: string[] }>;
   onMarkComplete: (id: string) => void;
   onCancel: (id: string) => void;
-  onSmartMove: (id: string, type: "consultation" | "follow-up" | "emergency", date: string) => void;
+  onSmartMove: (id: string, type: AppointmentType, date: string) => void;
+  onOpenPatientHistory: (patientName: string) => void;
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
       <PanelCard className="p-6 xl:p-7">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <SectionPill icon={Activity} tone="sky">Daily timeline</SectionPill>
+            <SectionPill icon={Activity} tone="sky">
+              Daily timeline
+            </SectionPill>
             <CardTitle className="mt-4 text-slate-950 dark:text-white">Live clinic schedule</CardTitle>
             <CardDescription className="mt-1 text-slate-600 dark:text-slate-400">
-              Today&apos;s schedule with status-aware patient movement and quick actions.
+              Click any patient name to open their visit timeline across past and current appointments.
             </CardDescription>
           </div>
           <Badge className="bg-slate-950 text-white dark:bg-white/10 dark:text-white">Live schedule</Badge>
@@ -575,12 +820,26 @@ function ScheduleView({
               className="flex flex-col gap-4 rounded-[28px] border border-slate-200/70 bg-white/82 p-5 transition duration-200 hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05] md:flex-row md:items-center md:justify-between"
             >
               <div className="flex items-center gap-4">
-                <div className="w-20 text-sm font-semibold text-slate-500 dark:text-slate-400">{formatTime(appointment.time)}</div>
+                <div className="w-20 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  {formatTime(appointment.time)}
+                </div>
                 <div>
-                  <div className="font-semibold text-slate-950 dark:text-white">{appointment.patientName}</div>
+                  <button
+                    onClick={() => onOpenPatientHistory(appointment.patientName)}
+                    className="font-semibold text-slate-950 transition hover:text-sky-600 dark:text-white dark:hover:text-sky-300"
+                  >
+                    {appointment.patientName}
+                  </button>
                   <div className="text-sm text-slate-600 dark:text-slate-400">
                     {appointment.appointmentType} • {appointment.duration} min
                   </div>
+                  <button
+                    onClick={() => onOpenPatientHistory(appointment.patientName)}
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-600 transition hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-200"
+                  >
+                    View patient history
+                    <MoveRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3 md:justify-end">
@@ -602,7 +861,12 @@ function ScheduleView({
                       <Syringe className="mr-2 h-4 w-4" />
                       Smart move
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onCancel(appointment._id)} className="hover:-translate-y-0.5 dark:text-white dark:hover:bg-white/8 dark:hover:text-white">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onCancel(appointment._id)}
+                      className="hover:-translate-y-0.5 dark:text-white dark:hover:bg-white/8 dark:hover:text-white"
+                    >
                       <CalendarX2 className="mr-2 h-4 w-4" />
                       Cancel
                     </Button>
@@ -616,7 +880,9 @@ function ScheduleView({
 
       <div className="space-y-6">
         <PanelCard className="p-6">
-          <SectionPill icon={Users} tone="violet">Queue</SectionPill>
+          <SectionPill icon={Users} tone="violet">
+            Queue
+          </SectionPill>
           <CardTitle className="mt-4 text-slate-950 dark:text-white">Queue management</CardTitle>
           <div className="mt-5 grid gap-4">
             <QueueMiniCard label="Now Serving" value={queue.nowServing?.patientName ?? "No active patient"} />
@@ -626,7 +892,9 @@ function ScheduleView({
         </PanelCard>
 
         <PanelCard className="p-6">
-          <SectionPill icon={Sparkles} tone="emerald">Doctor idle time</SectionPill>
+          <SectionPill icon={Sparkles} tone="emerald">
+            Doctor idle time
+          </SectionPill>
           <CardTitle className="mt-4 text-slate-950 dark:text-white">Doctor Idle Time Intelligence</CardTitle>
           <div className="mt-5 space-y-3">
             {idleInsights.map((insight) => (
@@ -641,6 +909,73 @@ function ScheduleView({
           </div>
         </PanelCard>
       </div>
+    </div>
+  );
+}
+
+function PatientsView({
+  dashboard,
+  onOpenPatientHistory
+}: {
+  dashboard: DashboardData;
+  onOpenPatientHistory: (patientName: string) => void;
+}) {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <PanelCard className="p-6">
+        <SectionPill icon={History} tone="sky">
+          Patient timeline
+        </SectionPill>
+        <CardTitle className="mt-4 text-slate-950 dark:text-white">Visit history at a glance</CardTitle>
+        <CardDescription className="mt-2 text-slate-600 dark:text-slate-400">
+          Every patient has a chronological visit timeline with date, doctor, appointment type, and outcome.
+        </CardDescription>
+        <div className="mt-6 space-y-3">
+          {dashboard.patientDirectory.map((patient) => (
+            <div
+              key={patient.name}
+              className="rounded-[24px] border border-slate-200/70 bg-white/82 p-4 transition duration-200 hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="font-semibold text-slate-950 dark:text-white">{patient.name}</div>
+                  <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                    {patient.totalVisits} visits • last seen {patient.latestVisitDate} • {patient.doctorName}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={patient.lastStatus} />
+                  <Button size="sm" variant="secondary" onClick={() => onOpenPatientHistory(patient.name)} className="hover:-translate-y-0.5">
+                    <Eye className="mr-2 h-4 w-4" />
+                    View timeline
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </PanelCard>
+
+      <PanelCard className="p-6">
+        <SectionPill icon={CalendarRange} tone="violet">
+          Timeline demo
+        </SectionPill>
+        <CardTitle className="mt-4 text-slate-950 dark:text-white">What judges will see</CardTitle>
+        <div className="mt-6 space-y-5">
+          {[
+            "Click Emily Davis from the schedule or patient directory.",
+            "Open the vertical timeline modal with historical consultations, follow-ups, and emergency visits.",
+            "Show that current-day actions feed the same patient history surface."
+          ].map((line) => (
+            <div
+              key={line}
+              className="rounded-[22px] border border-slate-200/70 bg-white/82 p-4 text-sm text-slate-700 transition hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.05]"
+            >
+              {line}
+            </div>
+          ))}
+        </div>
+      </PanelCard>
     </div>
   );
 }
@@ -687,13 +1022,135 @@ function QueueView({ queue }: { queue: QueueData }) {
   );
 }
 
-function InsightsView({ dashboard }: { dashboard: DashboardData }) {
+function LiveClinicView({
+  dashboard,
+  queue,
+  onOpenPatientHistory
+}: {
+  dashboard: DashboardData;
+  queue: QueueData;
+  onOpenPatientHistory: (patientName: string) => void;
+}) {
+  const twin = dashboard.digitalTwin;
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <PanelCard className="p-6 xl:p-7">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <SectionPill icon={Cpu} tone="sky">
+              Clinic digital twin
+            </SectionPill>
+            <CardTitle className="mt-4 text-slate-950 dark:text-white">Real-time operational state</CardTitle>
+            <CardDescription className="mt-1 text-slate-600 dark:text-slate-400">
+              Animated cards mirror the consultation room, waiting area, next patient, and queue pulse as appointment status changes.
+            </CardDescription>
+          </div>
+          <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">Live</Badge>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <DigitalTwinCard
+            icon={Stethoscope}
+            label="Consultation Room"
+            tone="green"
+            status={twin.consultationRoom.status === "consulting" ? "green" : "blue"}
+            title={twin.consultationRoom.patientName ?? "Room available"}
+            description={`${twin.consultationRoom.doctorName} ${twin.consultationRoom.patientName ? "is consulting now" : "is ready for the next patient"}`}
+          />
+          <DigitalTwinCard
+            icon={Users}
+            label="Waiting Area"
+            tone="amber"
+            status="yellow"
+            title={`${twin.waitingArea.count} patient${twin.waitingArea.count === 1 ? "" : "s"} waiting`}
+            description={twin.waitingArea.patients.length ? twin.waitingArea.patients.join(" • ") : "Waiting area is clear"}
+          />
+          <DigitalTwinCard
+            icon={AlarmClock}
+            label="Next Patient"
+            tone="sky"
+            status="blue"
+            title={twin.nextPatient.patientName ?? "No upcoming patient"}
+            description={
+              twin.nextPatient.patientName && twin.nextPatient.time && twin.nextPatient.appointmentType
+                ? `${twin.nextPatient.appointmentType} • ${formatTime(twin.nextPatient.time)}`
+                : "The next slot is still open"
+            }
+          />
+          <DigitalTwinCard
+            icon={Activity}
+            label="Queue Status"
+            tone="violet"
+            status="blue"
+            title={twin.queueStatus.nowServing ?? "No active queue"}
+            description={`Next: ${twin.queueStatus.nextPatient ?? "Queue clear"}`}
+          />
+        </div>
+      </PanelCard>
+
+      <div className="space-y-6">
+        <PanelCard className="p-6">
+          <SectionPill icon={Bell} tone="amber">
+            Status indicators
+          </SectionPill>
+          <CardTitle className="mt-4 text-slate-950 dark:text-white">Legend</CardTitle>
+          <div className="mt-5 space-y-3">
+            <IndicatorRow color="bg-emerald-500" label="Green" description="Doctor actively consulting a patient." />
+            <IndicatorRow color="bg-amber-500" label="Yellow" description="Patient flow waiting in the reception queue." />
+            <IndicatorRow color="bg-sky-500" label="Blue" description="Upcoming appointment or stable queue transition." />
+          </div>
+        </PanelCard>
+
+        <PanelCard className="p-6">
+          <SectionPill icon={History} tone="violet">
+            Quick patient context
+          </SectionPill>
+          <CardTitle className="mt-4 text-slate-950 dark:text-white">Open the next patient timeline</CardTitle>
+          <div className="mt-5 space-y-3">
+            {[queue.nowServing, queue.nextPatient].filter(Boolean).map((appointment) => (
+              <button
+                key={appointment!._id}
+                onClick={() => onOpenPatientHistory(appointment!.patientName)}
+                className="flex w-full items-center justify-between rounded-[22px] border border-slate-200/70 bg-white/82 p-4 text-left transition hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
+              >
+                <div>
+                  <div className="font-semibold text-slate-950 dark:text-white">{appointment!.patientName}</div>
+                  <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                    {appointment!.appointmentType} • {formatTime(appointment!.time)}
+                  </div>
+                </div>
+                <Eye className="h-4 w-4 text-sky-600 dark:text-sky-300" />
+              </button>
+            ))}
+          </div>
+        </PanelCard>
+      </div>
+    </div>
+  );
+}
+
+function InsightsView({
+  dashboard,
+  autopilotEnabled,
+  onApplySuggestion,
+  onIgnoreSuggestion
+}: {
+  dashboard: DashboardData;
+  autopilotEnabled: boolean;
+  onApplySuggestion: (suggestionId: string) => void;
+  onIgnoreSuggestion: (suggestionId: string) => void;
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
       <PanelCard className="p-6">
-        <SectionPill icon={UserRound} tone="amber">Waitlist</SectionPill>
+        <SectionPill icon={UserRound} tone="amber">
+          Waitlist
+        </SectionPill>
         <CardTitle className="mt-4 text-slate-950 dark:text-white">Waitlist recovery</CardTitle>
-        <CardDescription className="mt-1 text-slate-600 dark:text-slate-400">Suggested patients when a slot opens up.</CardDescription>
+        <CardDescription className="mt-1 text-slate-600 dark:text-slate-400">
+          Suggested patients when a slot opens up.
+        </CardDescription>
         <div className="mt-5 space-y-3">
           {dashboard.waitlist.map((entry) => (
             <div
@@ -713,9 +1170,13 @@ function InsightsView({ dashboard }: { dashboard: DashboardData }) {
       </PanelCard>
 
       <PanelCard className="p-6">
-        <SectionPill icon={TrendingUp} tone="fuchsia">Optimizer</SectionPill>
+        <SectionPill icon={TrendingUp} tone="fuchsia">
+          Optimizer
+        </SectionPill>
         <CardTitle className="mt-4 text-slate-950 dark:text-white">AI Smart Day Optimizer</CardTitle>
-        <CardDescription className="mt-1 text-slate-600 dark:text-slate-400">Efficiency scoring across idle time, overbook risk, and balance.</CardDescription>
+        <CardDescription className="mt-1 text-slate-600 dark:text-slate-400">
+          Efficiency scoring across idle time, overbook risk, and balance.
+        </CardDescription>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <Metric label="Efficiency" value={`${dashboard.efficiency.efficiencyScore}%`} />
           <Metric label="Idle Minutes" value={String(dashboard.efficiency.metrics.idleMinutes)} />
@@ -731,6 +1192,21 @@ function InsightsView({ dashboard }: { dashboard: DashboardData }) {
               <div key={suggestion}>• {suggestion}</div>
             ))}
           </div>
+        </div>
+        <div className="mt-6">
+          {autopilotEnabled && dashboard.autopilotSuggestions.length ? (
+            <div className="space-y-3">
+              {dashboard.autopilotSuggestions.slice(0, 3).map((suggestion) => (
+                <AutopilotSuggestionCard
+                  key={suggestion.id}
+                  suggestion={suggestion}
+                  compact
+                  onApply={() => onApplySuggestion(suggestion.id)}
+                  onIgnore={() => onIgnoreSuggestion(suggestion.id)}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
       </PanelCard>
     </div>
@@ -759,7 +1235,9 @@ function AnalyticsView({
       </div>
 
       <PanelCard className="p-6">
-        <SectionPill icon={ChartColumn} tone="sky">Analytics</SectionPill>
+        <SectionPill icon={ChartColumn} tone="sky">
+          Analytics
+        </SectionPill>
         <CardTitle className="mt-4 text-slate-950 dark:text-white">Weekly Efficiency</CardTitle>
         <div className="mt-6 h-[360px] rounded-[30px] border border-slate-200/70 bg-white/82 p-5 dark:border-white/10 dark:bg-white/[0.03]">
           <ResponsiveContainer width="100%" height="100%">
@@ -828,26 +1306,27 @@ function NotificationsPanel({
   if (!open) return null;
 
   return (
-    <div className={`fixed inset-0 z-[65] ${isDark ? "bg-slate-950/42" : "bg-slate-950/20"} backdrop-blur-md`} onClick={() => onOpenChange(false)}>
+    <div
+      className={`fixed inset-0 z-[65] ${isDark ? "bg-slate-950/58" : "bg-slate-950/26"} backdrop-blur-md`}
+      onClick={() => onOpenChange(false)}
+    >
       <div
         className={`absolute right-4 top-4 h-[calc(100vh-2rem)] w-full max-w-md rounded-[32px] p-5 shadow-[0_30px_80px_rgba(2,6,23,0.4)] ${
-          isDark
-            ? "border border-white/10 bg-slate-950/98"
-            : "border border-slate-200 bg-white/98"
+          isDark ? "border border-white/10 bg-slate-950/98" : "border border-slate-200 bg-white/98"
         }`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <div>
-            <div className={`text-xs font-semibold uppercase tracking-[0.22em] ${isDark ? "text-violet-300" : "text-violet-600"}`}>Notifications</div>
+            <div className={`text-xs font-semibold uppercase tracking-[0.22em] ${isDark ? "text-violet-300" : "text-violet-600"}`}>
+              Notifications
+            </div>
             <div className={`mt-2 text-2xl font-semibold ${isDark ? "text-white" : "text-slate-950"}`}>Activity stream</div>
           </div>
           <button
             onClick={() => onOpenChange(false)}
             className={`rounded-full p-2 transition ${
-              isDark
-                ? "text-slate-400 hover:bg-white/8 hover:text-white"
-                : "text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+              isDark ? "text-slate-400 hover:bg-white/8 hover:text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-950"
             }`}
           >
             <X className="h-5 w-5" />
@@ -860,6 +1339,69 @@ function NotificationsPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function PatientHistoryModal({
+  open,
+  onOpenChange,
+  patientName,
+  visits
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  patientName: string;
+  visits: PatientVisit[];
+}) {
+  const visitsByYear = visits.reduce<Record<string, PatientVisit[]>>((accumulator, visit) => {
+    const year = visit.visitDate.slice(0, 4);
+    accumulator[year] ??= [];
+    accumulator[year].push(visit);
+    return accumulator;
+  }, {});
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <div>
+          <div className="text-sm font-semibold uppercase tracking-[0.22em] text-sky-600 dark:text-sky-300">Patient history</div>
+          <div className="mt-2 font-display text-3xl font-semibold text-slate-950 dark:text-white">{patientName}</div>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            Vertical visit timeline showing every recorded appointment chronologically.
+          </p>
+        </div>
+        <div className="mt-6 max-h-[60vh] space-y-8 overflow-y-auto pr-2">
+          {Object.entries(visitsByYear)
+            .sort(([firstYear], [secondYear]) => firstYear.localeCompare(secondYear))
+            .map(([year, yearVisits]) => (
+              <div key={year}>
+                <div className="text-xl font-semibold text-slate-950 dark:text-white">{year}</div>
+                <div className="mt-4 space-y-4">
+                  {yearVisits
+                    .sort((first, second) => first.visitDate.localeCompare(second.visitDate))
+                    .map((visit) => (
+                      <div key={visit.id} className="flex gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="h-3 w-3 rounded-full bg-sky-500" />
+                          <div className="mt-2 min-h-[52px] w-px bg-slate-200 dark:bg-white/10" />
+                        </div>
+                        <div className="rounded-[22px] border border-slate-200/70 bg-white/85 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                          <div className="font-semibold text-slate-950 dark:text-white">
+                            {visit.appointmentType} • {visit.doctorName}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">{visit.visitDate}</div>
+                          <div className="mt-3">
+                            <StatusBadge status={visit.status} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -928,6 +1470,177 @@ function ActionCard({
   );
 }
 
+function ActionLine({
+  icon: Icon,
+  title,
+  description,
+  onClick
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center justify-between rounded-[22px] border border-slate-200/70 bg-white/82 p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
+    >
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-sky-500/12 p-2 text-sky-600 dark:text-sky-300">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="font-semibold text-slate-950 dark:text-white">{title}</div>
+          <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">{description}</div>
+        </div>
+      </div>
+      <MoveRight className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+    </button>
+  );
+}
+
+function AutopilotToggle({
+  enabled,
+  onToggle,
+  visualOnly = false
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+  visualOnly?: boolean;
+}) {
+  return (
+    <button
+      onClick={visualOnly ? undefined : onToggle}
+      className={`flex items-center gap-3 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+        enabled
+          ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/12 dark:text-emerald-300"
+          : "border-slate-200 bg-white/82 text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
+      } ${visualOnly ? "cursor-default" : "hover:-translate-y-0.5"}`}
+    >
+      <span>Clinic Autopilot: {enabled ? "ON" : "OFF"}</span>
+      <span className={`relative h-6 w-11 rounded-full ${enabled ? "bg-emerald-500/30" : "bg-slate-300/80 dark:bg-slate-700"}`}>
+        <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${enabled ? "left-6" : "left-1"}`} />
+      </span>
+    </button>
+  );
+}
+
+function AutopilotSuggestionCard({
+  suggestion,
+  onApply,
+  onIgnore,
+  compact = false
+}: {
+  suggestion: AutopilotSuggestion;
+  onApply: () => void;
+  onIgnore: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="rounded-[24px] border border-slate-200/70 bg-white/82 p-4 transition duration-200 hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">{suggestion.title}</div>
+          <div className="mt-2 font-semibold text-slate-950 dark:text-white">{suggestion.windowLabel}</div>
+          <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">{suggestion.detail}</div>
+        </div>
+        <Badge className={accentBadge(suggestion.type === "overbook-risk" ? "amber" : suggestion.type === "waitlist-recovery" ? "emerald" : "sky")}>
+          {suggestion.type.replaceAll("-", " ")}
+        </Badge>
+      </div>
+      {!compact ? (
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Button size="sm" onClick={onApply} className="hover:-translate-y-0.5">
+            {suggestion.actionLabel}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onIgnore} className="hover:-translate-y-0.5 dark:text-white dark:hover:bg-white/8 dark:hover:text-white">
+            Ignore
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DigitalTwinCard({
+  icon: Icon,
+  label,
+  title,
+  description,
+  status
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  title: string;
+  description: string;
+  status: "green" | "yellow" | "blue";
+  tone?: string;
+}) {
+  const statusClasses = {
+    green: "bg-emerald-500 shadow-[0_0_24px_rgba(16,185,129,0.45)]",
+    yellow: "bg-amber-500 shadow-[0_0_24px_rgba(245,158,11,0.38)]",
+    blue: "bg-sky-500 shadow-[0_0_24px_rgba(14,165,233,0.38)]"
+  };
+
+  return (
+    <motion.div
+      whileHover={{ y: -6, scale: 1.01 }}
+      className="rounded-[28px] border border-slate-200/70 bg-white/88 p-5 dark:border-white/10 dark:bg-white/[0.03]"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="rounded-2xl bg-sky-500/12 p-3 text-sky-600 dark:text-sky-300">
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className={`h-3 w-3 rounded-full ${statusClasses[status]}`} />
+      </div>
+      <div className="mt-5 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="mt-3 text-2xl font-semibold text-slate-950 dark:text-white">{title}</div>
+      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">{description}</div>
+    </motion.div>
+  );
+}
+
+function IndicatorRow({
+  color,
+  label,
+  description
+}: {
+  color: string;
+  label: string;
+  description: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-[22px] border border-slate-200/70 bg-white/82 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className={`h-3 w-3 rounded-full ${color}`} />
+      <div>
+        <div className="font-semibold text-slate-950 dark:text-white">{label}</div>
+        <div className="text-sm text-slate-600 dark:text-slate-400">{description}</div>
+      </div>
+    </div>
+  );
+}
+
+function MutedState({
+  icon: Icon,
+  title,
+  description
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-[26px] border border-dashed border-slate-300 bg-white/60 p-6 text-center dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="mx-auto w-fit rounded-2xl bg-sky-500/12 p-3 text-sky-600 dark:text-sky-300">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="mt-4 font-semibold text-slate-950 dark:text-white">{title}</div>
+      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">{description}</div>
+    </div>
+  );
+}
+
 function QueueMiniCard({
   label,
   value,
@@ -938,7 +1651,13 @@ function QueueMiniCard({
   strong?: boolean;
 }) {
   return (
-    <div className={`rounded-[24px] border p-4 transition duration-200 hover:-translate-y-0.5 ${strong ? "border-slate-950 bg-slate-950 text-white dark:border-white/10 dark:bg-slate-950" : "border-slate-200/70 bg-white/82 text-slate-950 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-white dark:hover:bg-white/[0.05]"}`}>
+    <div
+      className={`rounded-[24px] border p-4 transition duration-200 hover:-translate-y-0.5 ${
+        strong
+          ? "border-slate-950 bg-slate-950 text-white dark:border-white/10 dark:bg-slate-950"
+          : "border-slate-200/70 bg-white/82 text-slate-950 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-white dark:hover:bg-white/[0.05]"
+      }`}
+    >
       <div className={`text-sm ${strong ? "text-slate-300" : "text-slate-500 dark:text-slate-400"}`}>{label}</div>
       <div className="mt-2 text-xl font-semibold">{value}</div>
     </div>
@@ -953,11 +1672,17 @@ function NotificationItem({
   darkOnly?: boolean;
 }) {
   return (
-    <div className={`rounded-[22px] border p-4 transition duration-200 hover:-translate-y-0.5 ${darkOnly ? "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]" : "border-slate-200/70 bg-white/82 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"}`}>
+    <div
+      className={`rounded-[22px] border p-4 transition duration-200 hover:-translate-y-0.5 ${
+        darkOnly
+          ? "border-white/10 bg-white/[0.05] hover:bg-white/[0.08]"
+          : "border-slate-200/70 bg-white/82 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className={`font-semibold ${darkOnly ? "text-white" : "text-slate-950 dark:text-white"}`}>{notification.title}</div>
-          <div className={`mt-1 text-sm ${darkOnly ? "text-slate-400" : "text-slate-600 dark:text-slate-400"}`}>{notification.description}</div>
+          <div className={`mt-1 text-sm ${darkOnly ? "text-slate-300" : "text-slate-600 dark:text-slate-400"}`}>{notification.description}</div>
         </div>
         <Badge className={accentBadge(notification.accent)}>{notification.time}</Badge>
       </div>
@@ -979,11 +1704,11 @@ function StatCard({
   accent: string;
 }) {
   const accents: Record<string, string> = {
-    cyan: "from-sky-50 via-white to-cyan-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
-    emerald: "from-emerald-50 via-white to-lime-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
-    teal: "from-teal-50 via-white to-sky-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
-    amber: "from-amber-50 via-white to-orange-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
-    violet: "from-violet-50 via-white to-fuchsia-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950"
+    cyan: "from-sky-100 via-white to-cyan-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
+    emerald: "from-emerald-100 via-white to-lime-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
+    teal: "from-teal-100 via-white to-sky-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
+    amber: "from-amber-100 via-white to-orange-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950",
+    violet: "from-violet-100 via-white to-fuchsia-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950"
   };
 
   return (
@@ -1002,11 +1727,7 @@ function StatCard({
   );
 }
 
-function StatusBadge({
-  status
-}: {
-  status: string;
-}) {
+function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     scheduled: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
     waiting: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
@@ -1048,7 +1769,11 @@ function ChartTooltip({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className={`rounded-[20px] border px-4 py-3 shadow-glass ${theme === "dark" ? "border-white/10 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-950"}`}>
+    <div
+      className={`rounded-[20px] border px-4 py-3 shadow-glass ${
+        theme === "dark" ? "border-white/10 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-950"
+      }`}
+    >
       <div className="text-sm font-semibold">{label}</div>
       <div className={`mt-1 text-sm ${theme === "dark" ? "text-blue-300" : "text-blue-600"}`}>
         {`${labelSuffix} : ${payload[0]?.value ?? 0}`}
@@ -1079,15 +1804,16 @@ function CommandCenter({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAction: (action: "book" | "schedule" | "waitlist" | "queue") => void;
+  onAction: (action: CommandAction) => void;
 }) {
   const [query, setQuery] = React.useState("");
   const actions = [
     { id: "book", label: "Book Appointment" },
     { id: "schedule", label: "View Schedule" },
-    { id: "book", label: "Add Patient" },
+    { id: "patients", label: "Open Patient History" },
     { id: "waitlist", label: "Open Waitlist" },
-    { id: "queue", label: "Live Queue" }
+    { id: "queue", label: "Live Queue" },
+    { id: "live-clinic", label: "Open Digital Twin" }
   ] as const;
   const filteredActions = actions.filter((action) => action.label.toLowerCase().includes(query.toLowerCase()));
 
@@ -1107,9 +1833,9 @@ function CommandCenter({
           className="w-full rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-sky-400/50"
         />
         <div className="mt-4 space-y-2">
-          {filteredActions.map((action, index) => (
+          {filteredActions.map((action) => (
             <button
-              key={`${action.id}-${index}`}
+              key={action.id}
               onClick={() => {
                 onAction(action.id);
                 onOpenChange(false);
