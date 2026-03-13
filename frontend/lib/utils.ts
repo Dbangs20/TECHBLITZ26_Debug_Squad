@@ -15,3 +15,30 @@ export function formatTime(time: string) {
 export function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
+
+export function normalizePhoneNumber(value: string) {
+  return value.replace(/[^\d+]/g, "");
+}
+
+export function buildWhatsAppLink(phone: string, message: string) {
+  const normalized = normalizePhoneNumber(phone).replace(/^\+/, "");
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
+}
+
+export function buildAppointmentWhatsAppMessage(payload: {
+  patientName: string;
+  doctorName: string;
+  date: string;
+  time: string;
+  appointmentType: string;
+}) {
+  return [
+    `Hello ${payload.patientName},`,
+    `Your ClinicFlow appointment is confirmed.`,
+    `Doctor: ${payload.doctorName}`,
+    `Date: ${payload.date}`,
+    `Time: ${formatTime(payload.time)}`,
+    `Type: ${payload.appointmentType}`,
+    "Please arrive 10 minutes early. Reply here if you need to reschedule."
+  ].join("\n");
+}

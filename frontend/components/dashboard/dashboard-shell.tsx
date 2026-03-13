@@ -19,6 +19,7 @@ import {
   Hospital,
   LogOut,
   Monitor,
+  MessageCircleMore,
   MoonStar,
   MoveRight,
   ScanSearch,
@@ -66,7 +67,7 @@ import type {
   QueueData,
   Session
 } from "@/lib/types";
-import { formatTime, todayIsoDate } from "@/lib/utils";
+import { buildAppointmentWhatsAppMessage, buildWhatsAppLink, formatTime, todayIsoDate } from "@/lib/utils";
 import { ClinicFlowLogo } from "@/components/landing/logo";
 import { BookingModal } from "@/components/modals/booking-modal";
 import { useTheme } from "@/components/theme-provider";
@@ -477,6 +478,7 @@ export function DashboardShell({
             <ScheduleView
               session={session}
               appointments={dashboard.todaySchedule}
+              doctorName={dashboard.doctor.name}
               queue={queue}
               idleInsights={dashboard.idleInsights}
               onMarkComplete={markComplete}
@@ -806,6 +808,7 @@ function OverviewView({
 function ScheduleView({
   session,
   appointments,
+  doctorName,
   queue,
   idleInsights,
   onMarkComplete,
@@ -815,6 +818,7 @@ function ScheduleView({
 }: {
   session: Session;
   appointments: Appointment[];
+  doctorName: string;
   queue: QueueData;
   idleInsights: Array<{ title: string; actions: string[] }>;
   onMarkComplete: (id: string) => void;
@@ -822,6 +826,18 @@ function ScheduleView({
   onSmartMove: (id: string, type: AppointmentType, date: string) => void;
   onOpenPatientHistory: (patientName: string) => void;
 }) {
+  function openWhatsApp(appointment: Appointment) {
+    if (!appointment.patientPhone) return;
+    const message = buildAppointmentWhatsAppMessage({
+      patientName: appointment.patientName,
+      doctorName,
+      date: appointment.date,
+      time: appointment.time,
+      appointmentType: appointment.appointmentType
+    });
+    window.open(buildWhatsAppLink(appointment.patientPhone, message), "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
       <PanelCard className="p-6 xl:p-7">
@@ -879,6 +895,17 @@ function ScheduleView({
                 ) : null}
                 {session.user.role === "receptionist" && appointment.status !== "cancelled" ? (
                   <>
+                    {appointment.patientPhone ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openWhatsApp(appointment)}
+                        className="hover:-translate-y-0.5"
+                      >
+                        <MessageCircleMore className="mr-2 h-4 w-4" />
+                        WhatsApp
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="secondary"

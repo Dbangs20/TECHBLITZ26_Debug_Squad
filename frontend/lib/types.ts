@@ -18,6 +18,7 @@ export interface Session {
 export interface Appointment {
   _id: string;
   patientName: string;
+  patientPhone?: string;
   doctorId: string | { _id: string; name: string; specialization?: string };
   receptionistId?: string;
   date: string;

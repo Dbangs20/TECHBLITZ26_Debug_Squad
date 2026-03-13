@@ -17,6 +17,7 @@ import { AppError } from "../utils/http.js";
 
 const appointmentSchema = z.object({
   patientName: z.string().min(2),
+  patientPhone: z.string().min(8).optional(),
   doctorId: z.string().min(1),
   date: z.string().min(1),
   time: z.string().regex(/^\d{2}:\d{2}$/),

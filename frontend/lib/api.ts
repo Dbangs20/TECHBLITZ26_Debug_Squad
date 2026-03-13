@@ -15,7 +15,7 @@ import {
   updateDemoAppointment
 } from "./demo-store";
 import { demoDoctorId } from "./mock-data";
-import type { AppointmentType, DashboardData, PatientVisit, QueueData, Session, WaitlistEntry } from "./types";
+import type { Appointment, AppointmentType, DashboardData, PatientVisit, QueueData, Session, WaitlistEntry } from "./types";
 import { todayIsoDate } from "./utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -100,6 +100,7 @@ export async function createAppointment(
   token: string,
   payload: {
     patientName: string;
+    patientPhone?: string;
     doctorId: string;
     date: string;
     time: string;
@@ -108,7 +109,7 @@ export async function createAppointment(
   }
 ) {
   try {
-    return await request("/appointments/create", {
+    return await request<Appointment>("/appointments/create", {
       method: "POST",
       body: JSON.stringify(payload)
     }, token);

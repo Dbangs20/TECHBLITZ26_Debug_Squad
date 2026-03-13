@@ -6,6 +6,7 @@ export type AppointmentType = "consultation" | "follow-up" | "emergency";
 export interface AppointmentDocument {
   _id: string;
   patientName: string;
+  patientPhone?: string;
   doctorId: Types.ObjectId | string;
   receptionistId: Types.ObjectId | string;
   date: string;
@@ -21,6 +22,7 @@ export interface AppointmentDocument {
 const appointmentSchema = new Schema<AppointmentDocument>(
   {
     patientName: { type: String, required: true, trim: true },
+    patientPhone: { type: String, trim: true },
     doctorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     receptionistId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     date: { type: String, required: true },

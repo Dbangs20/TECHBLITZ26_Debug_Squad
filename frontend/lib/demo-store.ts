@@ -85,6 +85,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-history-1",
         patientName: "Emily Davis",
+        patientPhone: "+919700000101",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: addDays(defaultDate, -32),
@@ -96,6 +97,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-history-2",
         patientName: "Emily Davis",
+        patientPhone: "+919700000101",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: addDays(defaultDate, -19),
@@ -107,6 +109,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-history-3",
         patientName: "James Wilson",
+        patientPhone: "+919700000202",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: addDays(defaultDate, -8),
@@ -118,6 +121,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-1",
         patientName: "Sarah Johnson",
+        patientPhone: "+919700000301",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: defaultDate,
@@ -129,6 +133,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-2",
         patientName: "Mike Chen",
+        patientPhone: "+919700000302",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: defaultDate,
@@ -140,6 +145,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-3",
         patientName: "Emily Davis",
+        patientPhone: "+919700000101",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: defaultDate,
@@ -151,6 +157,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-4",
         patientName: "James Wilson",
+        patientPhone: "+919700000202",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: defaultDate,
@@ -162,6 +169,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-5",
         patientName: "Lisa Anderson",
+        patientPhone: "+919700000303",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: defaultDate,
@@ -173,6 +181,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-6",
         patientName: "Rahul Sharma",
+        patientPhone: "+919700000304",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: defaultDate,
@@ -184,6 +193,7 @@ function buildDefaultState(): DemoState {
       {
         _id: "apt-7",
         patientName: "Olivia Martin",
+        patientPhone: "+919700000305",
         doctorId: "doctor-demo-1",
         receptionistId: "demo-receptionist",
         date: defaultDate,
@@ -560,6 +570,7 @@ export function getDemoPatientHistory(patientName: string) {
 
 export function createDemoAppointment(payload: {
   patientName: string;
+  patientPhone?: string;
   doctorId: string;
   date: string;
   time: string;
@@ -587,6 +598,7 @@ export function createDemoAppointment(payload: {
   const appointment: Appointment = {
     _id: crypto.randomUUID(),
     patientName: payload.patientName,
+    patientPhone: payload.patientPhone,
     doctorId: payload.doctorId,
     receptionistId: state.receptionist.id,
     date: payload.date,
