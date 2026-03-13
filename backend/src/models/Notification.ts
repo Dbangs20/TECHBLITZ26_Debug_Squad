@@ -1,8 +1,8 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, type Types } from "mongoose";
 
 export interface NotificationDocument {
   _id: string;
-  userId: string;
+  userId: Types.ObjectId | string;
   title: string;
   message: string;
   type: "reminder" | "alert" | "insight";

@@ -1,9 +1,9 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, type Types } from "mongoose";
 
 export interface WaitlistDocument {
   _id: string;
   patientName: string;
-  doctorId: string;
+  doctorId: Types.ObjectId | string;
   preferredDate: string;
   appointmentType: "consultation" | "follow-up" | "emergency";
   urgency: number;

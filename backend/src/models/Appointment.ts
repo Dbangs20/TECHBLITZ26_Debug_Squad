@@ -1,4 +1,4 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, type Types } from "mongoose";
 
 export type AppointmentStatus = "scheduled" | "waiting" | "completed" | "cancelled";
 export type AppointmentType = "consultation" | "follow-up" | "emergency";
@@ -6,8 +6,8 @@ export type AppointmentType = "consultation" | "follow-up" | "emergency";
 export interface AppointmentDocument {
   _id: string;
   patientName: string;
-  doctorId: string;
-  receptionistId: string;
+  doctorId: Types.ObjectId | string;
+  receptionistId: Types.ObjectId | string;
   date: string;
   time: string;
   duration: number;
