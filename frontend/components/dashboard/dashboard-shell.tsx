@@ -333,9 +333,15 @@ function Sidebar({
   activeSection: SectionId;
   onChange: (section: SectionId) => void;
 }) {
+  const isDark = theme === "dark";
+
   return (
-    <Card className="sticky top-4 flex h-[calc(100vh-2rem)] flex-col items-center gap-6 overflow-hidden border border-white/70 bg-gradient-to-b from-emerald-50/95 via-sky-50/95 to-white/95 p-4 text-slate-950 shadow-[0_25px_70px_rgba(14,165,233,0.12)] dark:border-white/10 dark:bg-slate-950/92 dark:text-white dark:shadow-[0_30px_80px_rgba(2,6,23,0.28)]">
-      <div className="absolute inset-0 bg-gradient-to-b from-emerald-300/12 via-transparent to-sky-300/12 dark:from-sky-500/8 dark:to-transparent" />
+    <Card className={`sticky top-4 flex h-[calc(100vh-2rem)] flex-col items-center gap-6 overflow-hidden p-4 shadow-[0_25px_70px_rgba(14,165,233,0.12)] ${
+      isDark
+        ? "border border-white/10 bg-slate-950/92 text-white shadow-[0_30px_80px_rgba(2,6,23,0.28)]"
+        : "border border-white/70 bg-gradient-to-b from-emerald-50/95 via-sky-50/95 to-white/95 text-slate-950"
+    }`}>
+      <div className={`absolute inset-0 ${isDark ? "bg-gradient-to-b from-white/[0.03] via-transparent to-transparent" : "bg-gradient-to-b from-emerald-300/12 via-transparent to-sky-300/12"}`} />
       <div className="relative">
         <ClinicFlowLogo compact />
       </div>
@@ -816,22 +822,33 @@ function NotificationsPanel({
   onOpenChange: (open: boolean) => void;
   notifications: Array<{ id: string; title: string; description: string; accent: string; time: string }>;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[65] bg-slate-950/18 backdrop-blur-sm" onClick={() => onOpenChange(false)}>
+    <div className={`fixed inset-0 z-[65] ${isDark ? "bg-slate-950/42" : "bg-slate-950/20"} backdrop-blur-md`} onClick={() => onOpenChange(false)}>
       <div
-        className="absolute right-4 top-4 h-[calc(100vh-2rem)] w-full max-w-md rounded-[32px] border border-white/10 bg-slate-950/96 p-5 shadow-[0_30px_80px_rgba(2,6,23,0.4)]"
+        className={`absolute right-4 top-4 h-[calc(100vh-2rem)] w-full max-w-md rounded-[32px] p-5 shadow-[0_30px_80px_rgba(2,6,23,0.4)] ${
+          isDark
+            ? "border border-white/10 bg-slate-950/98"
+            : "border border-slate-200 bg-white/98"
+        }`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-300">Notifications</div>
-            <div className="mt-2 text-2xl font-semibold text-white">Activity stream</div>
+            <div className={`text-xs font-semibold uppercase tracking-[0.22em] ${isDark ? "text-violet-300" : "text-violet-600"}`}>Notifications</div>
+            <div className={`mt-2 text-2xl font-semibold ${isDark ? "text-white" : "text-slate-950"}`}>Activity stream</div>
           </div>
           <button
             onClick={() => onOpenChange(false)}
-            className="rounded-full p-2 text-slate-400 transition hover:bg-white/8 hover:text-white"
+            className={`rounded-full p-2 transition ${
+              isDark
+                ? "text-slate-400 hover:bg-white/8 hover:text-white"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+            }`}
           >
             <X className="h-5 w-5" />
           </button>
