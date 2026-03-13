@@ -9,9 +9,11 @@ import {
   ClipboardList,
   Command,
   LogOut,
+  MoonStar,
+  Settings,
   Sparkles,
   Syringe,
-  Stethoscope,
+  SunMedium,
   Users
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -21,6 +23,7 @@ import { demoDoctorId } from "@/lib/mock-data";
 import type { DashboardData, QueueData, Session } from "@/lib/types";
 import { formatTime, todayIsoDate } from "@/lib/utils";
 import { ClinicFlowLogo } from "@/components/landing/logo";
+import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -28,10 +31,11 @@ import { BookingModal } from "@/components/modals/booking-modal";
 import { useToast } from "@/components/ui/toast";
 
 const menu = [
-  { id: "overview", label: "Overview", icon: Activity },
-  { id: "schedule", label: "Schedule", icon: ClipboardList },
-  { id: "queue", label: "Queue", icon: Users },
-  { id: "insights", label: "Insights", icon: Sparkles }
+  { id: "overview", label: "Overview", icon: Activity, target: "overview-section" },
+  { id: "schedule", label: "Schedule", icon: ClipboardList, target: "schedule-section" },
+  { id: "queue", label: "Queue", icon: Users, target: "queue-section" },
+  { id: "insights", label: "Insights", icon: Sparkles, target: "insights-section" },
+  { id: "settings", label: "Settings", icon: Settings, target: "settings-section" }
 ];
 
 export function DashboardShell({
@@ -42,6 +46,7 @@ export function DashboardShell({
   onLogout: () => void;
 }) {
   const { push } = useToast();
+  const { theme, toggleTheme } = useTheme();
   const [dashboard, setDashboard] = React.useState<DashboardData | null>(null);
   const [queue, setQueue] = React.useState<QueueData | null>(null);
   const [bookingOpen, setBookingOpen] = React.useState(false);
@@ -101,7 +106,8 @@ export function DashboardShell({
   async function smartReschedule(id: string, appointmentType: "consultation" | "follow-up" | "emergency", date: string) {
     try {
       const result = await fetchSmartSlots(session.token, doctorId, appointmentType, date);
-      const nextSlot = result.suggestions[0];
+      const currentAppointment = dashboard?.todaySchedule.find((appointment) => appointment._id === id);
+      const nextSlot = result.suggestions.find((slot) => slot !== currentAppointment?.time) ?? result.suggestions[0];
 
       if (!nextSlot) {
         push({ title: "No better slot found", description: "ClinicFlow did not find a valid reschedule slot." });
@@ -146,27 +152,31 @@ export function DashboardShell({
           if (action === "queue") document.getElementById("queue-section")?.scrollIntoView({ behavior: "smooth" });
         }}
       />
-      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[88px_1fr]">
-        <Card className="flex flex-col items-center gap-4 p-4">
+      <div className="mx-auto grid max-w-[1500px] gap-6 lg:grid-cols-[112px_minmax(0,1fr)] xl:gap-8">
+        <Card className="sticky top-4 flex h-fit flex-col items-center gap-6 p-4">
           <ClinicFlowLogo compact />
-          <div className="mt-4 flex flex-col gap-3">
+          <div className="mt-1 flex w-full flex-col gap-3">
             {menu.map((item) => (
               <button
                 key={item.id}
-                className="rounded-2xl p-3 text-slate-500 transition hover:bg-white/80 hover:text-slate-900"
+                onClick={() => document.getElementById(item.target)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3 text-slate-500 transition hover:bg-white/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900/80 dark:hover:text-slate-100"
               >
                 <item.icon className="h-5 w-5" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em]">{item.label}</span>
               </button>
             ))}
           </div>
         </Card>
-        <div className="space-y-6">
-          <Card className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-6 xl:space-y-8">
+          <Card id="overview-section" className="flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-sm text-slate-500">
                 {session.user.role === "doctor" ? "Doctor Dashboard" : "Receptionist Dashboard"}
               </div>
-              <CardTitle className="mt-1">Welcome back, {session.user.name}</CardTitle>
+              <CardTitle className="mt-1">
+                Welcome back, {session.user.role === "doctor" ? dashboard.doctor.name : session.user.name}
+              </CardTitle>
               <CardDescription className="mt-2">
                 {dashboard.doctor.name} • {dashboard.doctor.specialization ?? "Clinic operations"} • {todayIsoDate()}
               </CardDescription>
@@ -197,8 +207,8 @@ export function DashboardShell({
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
-            <Card id="schedule-section" className="p-6">
-              <div className="flex items-center justify-between">
+            <Card id="schedule-section" className="p-6 xl:p-7">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <CardTitle>Daily timeline</CardTitle>
                   <CardDescription className="mt-1">Today’s schedule with status-aware patient movement.</CardDescription>
@@ -212,18 +222,18 @@ export function DashboardShell({
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.04 }}
-                    className="flex flex-col gap-4 rounded-[24px] border border-white/70 bg-white/70 p-4 md:flex-row md:items-center md:justify-between"
+                    className="flex flex-col gap-4 rounded-[24px] border border-white/70 bg-white/70 p-5 dark:border-slate-800 dark:bg-slate-900/60 md:flex-row md:items-center md:justify-between"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="text-sm font-semibold text-slate-500">{formatTime(appointment.time)}</div>
+                      <div className="w-20 text-sm font-semibold text-slate-500 dark:text-slate-400">{formatTime(appointment.time)}</div>
                       <div>
-                        <div className="font-semibold text-slate-900">{appointment.patientName}</div>
-                        <div className="text-sm text-slate-500">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">{appointment.patientName}</div>
+                        <div className="text-sm text-slate-500 dark:text-slate-400">
                           {appointment.appointmentType} • {appointment.duration} min
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3 md:justify-end">
                       <StatusBadge status={appointment.status} />
                       {session.user.role === "doctor" && appointment.status !== "completed" ? (
                         <Button size="sm" variant="secondary" onClick={() => markComplete(appointment._id)}>
@@ -253,7 +263,7 @@ export function DashboardShell({
             </Card>
 
             <div className="space-y-6">
-              <Card id="queue-section">
+              <Card id="queue-section" className="p-6">
                 <CardTitle>Queue management</CardTitle>
                 <div className="mt-5 grid gap-4">
                   <QueueBlock label="Now Serving" patient={queue.nowServing?.patientName ?? "No active patient"} />
@@ -262,13 +272,13 @@ export function DashboardShell({
                 </div>
               </Card>
 
-              <Card>
+              <Card className="p-6">
                 <CardTitle>Doctor Idle Time Intelligence</CardTitle>
                 <div className="mt-5 space-y-3">
                   {dashboard.idleInsights.map((insight) => (
-                    <div key={insight.title} className="rounded-[24px] border border-emerald-100 bg-emerald-50 p-4">
-                      <div className="font-semibold text-slate-900">{insight.title}</div>
-                      <div className="mt-2 text-sm text-slate-600">{insight.actions.join(" • ")}</div>
+                    <div key={insight.title} className="rounded-[24px] border border-emerald-100 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                      <div className="font-semibold text-slate-900 dark:text-slate-50">{insight.title}</div>
+                      <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{insight.actions.join(" • ")}</div>
                     </div>
                   ))}
                 </div>
@@ -276,17 +286,17 @@ export function DashboardShell({
             </div>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-            <Card id="waitlist-section">
+          <div id="insights-section" className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+            <Card id="waitlist-section" className="p-6">
               <CardTitle>Waitlist recovery</CardTitle>
               <CardDescription className="mt-1">Suggested patients when a slot opens up.</CardDescription>
               <div className="mt-5 space-y-3">
                 {dashboard.waitlist.map((entry) => (
-                  <div key={entry._id} className="rounded-[24px] border border-white/70 bg-white/70 p-4">
+                  <div key={entry._id} className="rounded-[24px] border border-white/70 bg-white/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-semibold text-slate-900">{entry.patientName}</div>
-                        <div className="text-sm text-slate-500">{entry.appointmentType}</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">{entry.patientName}</div>
+                        <div className="text-sm text-slate-500 dark:text-slate-400">{entry.appointmentType}</div>
                       </div>
                       <Badge className="bg-amber-100 text-amber-700">Urgency {entry.urgency}</Badge>
                     </div>
@@ -295,7 +305,7 @@ export function DashboardShell({
               </div>
             </Card>
 
-            <Card>
+            <Card className="p-6">
               <CardTitle>AI Smart Day Optimizer</CardTitle>
               <CardDescription className="mt-1">Efficiency scoring across idle time, overbook risk, and balance.</CardDescription>
               <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -303,12 +313,12 @@ export function DashboardShell({
                 <Metric label="Idle Minutes" value={String(dashboard.efficiency.metrics.idleMinutes)} />
                 <Metric label="Balanced" value={`${dashboard.efficiency.metrics.balancedSchedule}%`} />
               </div>
-              <div className="mt-6 rounded-[28px] border border-sky-100 bg-gradient-to-r from-sky-50 to-emerald-50 p-5">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <div className="mt-6 rounded-[28px] border border-sky-100 bg-gradient-to-r from-sky-50 to-emerald-50 p-5 dark:border-sky-900/50 dark:from-slate-900 dark:to-cyan-950/40">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                   <Bell className="h-4 w-4 text-sky-600" />
                   Optimizer suggestions
                 </div>
-                <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                <div className="mt-3 grid gap-2 text-sm text-slate-700 dark:text-slate-300">
                   {dashboard.efficiency.suggestions.map((suggestion) => (
                     <div key={suggestion}>• {suggestion}</div>
                   ))}
@@ -316,6 +326,21 @@ export function DashboardShell({
               </div>
             </Card>
           </div>
+
+          <Card id="settings-section" className="p-6">
+            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle>Settings</CardTitle>
+                <CardDescription className="mt-1">
+                  Switch between the brighter clinic workspace and the darker command-center mode inspired by the recording.
+                </CardDescription>
+              </div>
+              <Button variant="secondary" onClick={toggleTheme}>
+                {theme === "dark" ? <SunMedium className="mr-2 h-4 w-4" /> : <MoonStar className="mr-2 h-4 w-4" />}
+                {theme === "dark" ? "Use bright mode" : "Use dark mode"}
+              </Button>
+            </div>
+          </Card>
         </div>
       </div>
     </div>
@@ -333,8 +358,8 @@ function StatCard({
 }) {
   return (
     <Card className={`bg-gradient-to-br ${tint} border-transparent`}>
-      <div className="text-sm text-slate-600">{label}</div>
-      <div className="mt-4 font-display text-4xl font-semibold text-slate-950">{value}</div>
+      <div className="text-sm text-slate-600 dark:text-slate-300">{label}</div>
+      <div className="mt-4 font-display text-4xl font-semibold text-slate-950 dark:text-slate-50">{value}</div>
     </Card>
   );
 }
@@ -364,8 +389,8 @@ function QueueBlock({
   highlight?: boolean;
 }) {
   return (
-    <div className={`rounded-[24px] p-4 ${highlight ? "bg-slate-950 text-white" : "border border-white/70 bg-white/70"}`}>
-      <div className={`text-sm ${highlight ? "text-slate-300" : "text-slate-500"}`}>{label}</div>
+    <div className={`rounded-[24px] p-4 ${highlight ? "bg-slate-950 text-white dark:bg-slate-900" : "border border-white/70 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60"}`}>
+      <div className={`text-sm ${highlight ? "text-slate-300" : "text-slate-500 dark:text-slate-400"}`}>{label}</div>
       <div className="mt-2 text-xl font-semibold">{patient}</div>
     </div>
   );
@@ -379,9 +404,9 @@ function Metric({
   value: string;
 }) {
   return (
-    <div className="rounded-[24px] border border-white/70 bg-white/70 p-4">
-      <div className="text-sm text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
+    <div className="rounded-[24px] border border-white/70 bg-white/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="text-sm text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="mt-2 text-2xl font-semibold text-slate-950 dark:text-slate-50">{value}</div>
     </div>
   );
 }
@@ -417,7 +442,7 @@ function CommandCenter({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Type a command..."
-          className="w-full rounded-[22px] border border-white/70 bg-white/70 px-4 py-3 text-sm text-slate-900 outline-none"
+          className="w-full rounded-[22px] border border-white/70 bg-white/70 px-4 py-3 text-sm text-slate-900 outline-none dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-100"
         />
         <div className="mt-4 space-y-2">
           {filteredActions.map((action, index) => (
@@ -427,7 +452,7 @@ function CommandCenter({
                 onAction(action.id);
                 onOpenChange(false);
               }}
-              className="flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left text-slate-700 transition hover:bg-emerald-400 hover:text-white"
+              className="flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left text-slate-700 transition hover:bg-emerald-400 hover:text-white dark:text-slate-200"
             >
               <span>{action.label}</span>
               <span className="text-xs uppercase tracking-[0.2em]">Go</span>
