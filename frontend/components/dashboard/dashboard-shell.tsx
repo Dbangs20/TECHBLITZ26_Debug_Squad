@@ -125,6 +125,31 @@ export function DashboardShell({
   }, [refresh]);
 
   React.useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      refresh();
+    }, 2500);
+
+    function onStorage(event: StorageEvent) {
+      if (event.key === "clinicflow-demo-state") {
+        refresh();
+      }
+    }
+
+    function onVisibilityChange() {
+      if (!document.hidden) refresh();
+    }
+
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refresh]);
+
+  React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -253,7 +278,6 @@ export function DashboardShell({
   const activeAppointments = dashboard.todaySchedule.filter((appointment) => appointment.status !== "cancelled");
   const completedCount = dashboard.todaySchedule.filter((appointment) => appointment.status === "completed").length;
   const scheduledCount = dashboard.todaySchedule.filter((appointment) => appointment.status === "scheduled").length;
-  const availableSlots = Math.max(0, Math.round(dashboard.efficiency.metrics.idleMinutes / 10));
   const utilizationRate = Math.min(
     100,
     Math.round((activeAppointments.reduce((sum, appointment) => sum + appointment.duration, 0) / 480) * 100)
@@ -307,10 +331,10 @@ export function DashboardShell({
             accent: "emerald"
           },
           {
-            label: "Available Slots",
-            value: String(availableSlots),
-            detail: `${dashboard.efficiency.metrics.idleMinutes} idle mins`,
-            icon: Waves,
+            label: "Appointments Left",
+            value: String(dashboard.capacity.remainingAppointments),
+            detail: `${dashboard.capacity.bookedAppointments}/${dashboard.capacity.maxAppointments} booked`,
+            icon: CalendarRange,
             accent: "teal"
           },
           {
@@ -469,7 +493,9 @@ export function DashboardShell({
             />
           ) : null}
 
-          {activeSection === "queue" ? <QueueView queue={queue} /> : null}
+          {activeSection === "queue" ? (
+            <QueueView queue={queue} waitlistCount={dashboard.waitlist.length} capacity={dashboard.capacity} />
+          ) : null}
 
           {activeSection === "live-clinic" ? (
             <LiveClinicView
@@ -765,6 +791,7 @@ function OverviewView({
             <QueueMiniCard label="Now Serving" value={queue.nowServing?.patientName ?? "No active patient"} />
             <QueueMiniCard label="Next Patient" value={queue.nextPatient?.patientName ?? "Queue clear"} />
             <QueueMiniCard label="Waiting Count" value={String(queue.waitingCount)} strong />
+            <QueueMiniCard label="Waitlist Standby" value={String(dashboard.waitlist.length)} />
           </div>
           <div className="mt-5 grid gap-3">
             <ActionLine icon={CalendarRange} title="Patient history ready" description={`${dashboard.patientDirectory.length} patients available in the timeline view.`} onClick={() => onOpenSection("patients")} />
@@ -980,7 +1007,15 @@ function PatientsView({
   );
 }
 
-function QueueView({ queue }: { queue: QueueData }) {
+function QueueView({
+  queue,
+  waitlistCount,
+  capacity
+}: {
+  queue: QueueData;
+  waitlistCount: number;
+  capacity: DashboardData["capacity"];
+}) {
   return (
     <PanelCard className="px-8 py-10 md:px-12">
       <div className="mx-auto max-w-5xl">
@@ -1014,6 +1049,19 @@ function QueueView({ queue }: { queue: QueueData }) {
               <div className="text-sm font-semibold uppercase tracking-[0.26em] text-slate-500 dark:text-slate-400">Waiting</div>
               <div className="mt-5 text-6xl font-semibold text-amber-500 dark:text-amber-300 md:text-7xl">{queue.waitingCount}</div>
               <div className="mt-3 text-lg text-slate-600 dark:text-slate-400">patients in queue</div>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <div className="rounded-[30px] border border-slate-200/70 bg-white/90 p-8 text-center transition duration-200 hover:-translate-y-1 hover:bg-white dark:border-white/10 dark:bg-slate-950/88 dark:hover:bg-slate-950/96">
+              <div className="text-sm font-semibold uppercase tracking-[0.26em] text-slate-500 dark:text-slate-400">Waitlist Standby</div>
+              <div className="mt-5 text-5xl font-semibold text-violet-600 dark:text-violet-300 md:text-6xl">{waitlistCount}</div>
+              <div className="mt-3 text-lg text-slate-600 dark:text-slate-400">patients ready for released slots</div>
+            </div>
+
+            <div className="rounded-[30px] border border-slate-200/70 bg-white/90 p-8 text-center transition duration-200 hover:-translate-y-1 hover:bg-white dark:border-white/10 dark:bg-slate-950/88 dark:hover:bg-slate-950/96">
+              <div className="text-sm font-semibold uppercase tracking-[0.26em] text-slate-500 dark:text-slate-400">Capacity Left</div>
+              <div className="mt-5 text-5xl font-semibold text-emerald-600 dark:text-emerald-300 md:text-6xl">{capacity.remainingAppointments}</div>
+              <div className="mt-3 text-lg text-slate-600 dark:text-slate-400">{capacity.bookedAppointments}/{capacity.maxAppointments} booked today</div>
             </div>
           </div>
         </div>
@@ -1064,7 +1112,11 @@ function LiveClinicView({
             tone="amber"
             status="yellow"
             title={`${twin.waitingArea.count} patient${twin.waitingArea.count === 1 ? "" : "s"} waiting`}
-            description={twin.waitingArea.patients.length ? twin.waitingArea.patients.join(" • ") : "Waiting area is clear"}
+            description={
+              twin.waitingArea.patients.length
+                ? `${twin.waitingArea.patients.join(" • ")} • ${twin.waitingArea.waitlistCount} on waitlist`
+                : `${twin.waitingArea.waitlistCount} on waitlist standby`
+            }
           />
           <DigitalTwinCard
             icon={AlarmClock}
@@ -1086,6 +1138,12 @@ function LiveClinicView({
             title={twin.queueStatus.nowServing ?? "No active queue"}
             description={`Next: ${twin.queueStatus.nextPatient ?? "Queue clear"}`}
           />
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-4">
+          <Metric label="Scheduled" value={String(twin.queueStatus.scheduledCount)} />
+          <Metric label="Consulting" value={String(twin.consultationRoom.patientName ? 1 : 0)} />
+          <Metric label="Waitlist" value={String(twin.waitingArea.waitlistCount)} />
+          <Metric label="Capacity Left" value={String(dashboard.capacity.remainingAppointments)} />
         </div>
       </PanelCard>
 

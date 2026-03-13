@@ -16,6 +16,7 @@ import { todayIsoDate } from "./utils";
 
 const DEMO_STATE_KEY = "clinicflow-demo-state";
 const defaultDate = todayIsoDate();
+const MAX_APPOINTMENTS_PER_DAY = 12;
 
 type DemoDoctor = {
   _id: string;
@@ -398,6 +399,7 @@ function buildDigitalTwin(state: DemoState, date: string): DigitalTwinState {
   const active = getActiveAppointments(state, date);
   const nowServing = active.find((appointment) => appointment.status === "waiting") ?? null;
   const nextPatient = active.find((appointment) => appointment.status === "scheduled") ?? null;
+  const sameDayWaitlist = state.waitlist.filter((entry) => entry.preferredDate === date);
 
   return {
     consultationRoom: {
@@ -407,7 +409,8 @@ function buildDigitalTwin(state: DemoState, date: string): DigitalTwinState {
     },
     waitingArea: {
       count: active.filter((appointment) => appointment.status === "waiting").length,
-      patients: active.filter((appointment) => appointment.status === "waiting").map((appointment) => appointment.patientName)
+      patients: active.filter((appointment) => appointment.status === "waiting").map((appointment) => appointment.patientName),
+      waitlistCount: sameDayWaitlist.length
     },
     nextPatient: {
       patientName: nextPatient?.patientName ?? null,
@@ -416,7 +419,9 @@ function buildDigitalTwin(state: DemoState, date: string): DigitalTwinState {
     },
     queueStatus: {
       nowServing: nowServing?.patientName ?? null,
-      nextPatient: nextPatient?.patientName ?? null
+      nextPatient: nextPatient?.patientName ?? null,
+      scheduledCount: active.filter((appointment) => appointment.status === "scheduled").length,
+      completedCount: active.filter((appointment) => appointment.status === "completed").length
     }
   };
 }
@@ -501,6 +506,11 @@ function buildDashboard(state: DemoState, date: string): DashboardData {
     nextPatient: nextPatient ? clone(nextPatient) : null,
     waitingPatients: clone(waitingPatients),
     scheduleHealthScore: efficiencyScore,
+    capacity: {
+      maxAppointments: MAX_APPOINTMENTS_PER_DAY,
+      bookedAppointments: active.length,
+      remainingAppointments: Math.max(0, MAX_APPOINTMENTS_PER_DAY - active.length)
+    },
     efficiency: {
       efficiencyScore,
       metrics: {
@@ -559,6 +569,9 @@ export function createDemoAppointment(payload: {
   const state = getDemoState();
   const duration = durations[payload.appointmentType];
   const appointments = getActiveAppointments(state, payload.date);
+  if (appointments.length >= MAX_APPOINTMENTS_PER_DAY) {
+    throw new Error("Clinic has reached maximum appointment capacity for the day");
+  }
   const conflict = findConflict(appointments, payload.time, duration);
 
   if (conflict) {

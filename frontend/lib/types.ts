@@ -56,6 +56,11 @@ export interface DashboardData {
   nextPatient: Appointment | null;
   waitingPatients: Appointment[];
   scheduleHealthScore: number;
+  capacity: {
+    maxAppointments: number;
+    bookedAppointments: number;
+    remainingAppointments: number;
+  };
   efficiency: {
     efficiencyScore: number;
     metrics: {
@@ -111,6 +116,7 @@ export interface DigitalTwinState {
   waitingArea: {
     count: number;
     patients: string[];
+    waitlistCount: number;
   };
   nextPatient: {
     patientName: string | null;
@@ -120,5 +126,7 @@ export interface DigitalTwinState {
   queueStatus: {
     nowServing: string | null;
     nextPatient: string | null;
+    scheduledCount: number;
+    completedCount: number;
   };
 }
