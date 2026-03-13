@@ -2,17 +2,20 @@
 
 import {
   addDemoWaitlist,
+  applyDemoAutopilotSuggestion,
   buildDemoSession,
   cancelDemoAppointment,
   completeDemoAppointment,
   createDemoAppointment,
   getDemoDashboard,
+  getDemoPatientHistory,
   getDemoQueue,
   getDemoSmartSlots,
+  ignoreDemoAutopilotSuggestion,
   updateDemoAppointment
 } from "./demo-store";
 import { demoDoctorId } from "./mock-data";
-import type { AppointmentType, DashboardData, QueueData, Session, WaitlistEntry } from "./types";
+import type { AppointmentType, DashboardData, PatientVisit, QueueData, Session, WaitlistEntry } from "./types";
 import { todayIsoDate } from "./utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -190,4 +193,17 @@ export async function addToWaitlist(
   } catch {
     return addDemoWaitlist(payload);
   }
+}
+
+export async function fetchPatientHistory(_token: string, patientName: string) {
+  return Promise.resolve(getDemoPatientHistory(patientName) as PatientVisit[]);
+}
+
+export async function applyAutopilotSuggestion(_token: string, suggestionId: string) {
+  return Promise.resolve(applyDemoAutopilotSuggestion(suggestionId));
+}
+
+export async function ignoreAutopilotSuggestion(_token: string, suggestionId: string) {
+  ignoreDemoAutopilotSuggestion(suggestionId);
+  return Promise.resolve({ ok: true });
 }

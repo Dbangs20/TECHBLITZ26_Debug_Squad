@@ -4,7 +4,10 @@ import type {
   Appointment,
   AppointmentStatus,
   AppointmentType,
+  AutopilotSuggestion,
   DashboardData,
+  DigitalTwinState,
+  PatientVisit,
   QueueData,
   Session,
   WaitlistEntry
@@ -29,6 +32,9 @@ interface DemoState {
   };
   appointments: Appointment[];
   waitlist: WaitlistEntry[];
+  autopilot: {
+    ignoredSuggestionIds: string[];
+  };
 }
 
 const durations: Record<AppointmentType, number> = {
@@ -52,6 +58,16 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function addDays(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00`);
+  value.setDate(value.getDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function byTime(first: Appointment, second: Appointment) {
+  return minutes(first.time) - minutes(second.time);
+}
+
 function buildDefaultState(): DemoState {
   return {
     doctor: {
@@ -65,6 +81,39 @@ function buildDefaultState(): DemoState {
       email: "demo@clinicflow.app"
     },
     appointments: [
+      {
+        _id: "apt-history-1",
+        patientName: "Emily Davis",
+        doctorId: "doctor-demo-1",
+        receptionistId: "demo-receptionist",
+        date: addDays(defaultDate, -32),
+        time: "10:10",
+        duration: 10,
+        appointmentType: "consultation",
+        status: "completed"
+      },
+      {
+        _id: "apt-history-2",
+        patientName: "Emily Davis",
+        doctorId: "doctor-demo-1",
+        receptionistId: "demo-receptionist",
+        date: addDays(defaultDate, -19),
+        time: "11:30",
+        duration: 5,
+        appointmentType: "follow-up",
+        status: "completed"
+      },
+      {
+        _id: "apt-history-3",
+        patientName: "James Wilson",
+        doctorId: "doctor-demo-1",
+        receptionistId: "demo-receptionist",
+        date: addDays(defaultDate, -8),
+        time: "14:20",
+        duration: 20,
+        appointmentType: "emergency",
+        status: "completed"
+      },
       {
         _id: "apt-1",
         patientName: "Sarah Johnson",
@@ -119,6 +168,28 @@ function buildDefaultState(): DemoState {
         duration: 10,
         appointmentType: "consultation",
         status: "scheduled"
+      },
+      {
+        _id: "apt-6",
+        patientName: "Rahul Sharma",
+        doctorId: "doctor-demo-1",
+        receptionistId: "demo-receptionist",
+        date: defaultDate,
+        time: "15:00",
+        duration: 10,
+        appointmentType: "consultation",
+        status: "scheduled"
+      },
+      {
+        _id: "apt-7",
+        patientName: "Olivia Martin",
+        doctorId: "doctor-demo-1",
+        receptionistId: "demo-receptionist",
+        date: defaultDate,
+        time: "15:40",
+        duration: 20,
+        appointmentType: "emergency",
+        status: "scheduled"
       }
     ],
     waitlist: [
@@ -128,7 +199,7 @@ function buildDefaultState(): DemoState {
         doctorId: "doctor-demo-1",
         preferredDate: defaultDate,
         appointmentType: "consultation",
-        urgency: 3
+        urgency: 4
       },
       {
         _id: "wait-2",
@@ -137,8 +208,19 @@ function buildDefaultState(): DemoState {
         preferredDate: defaultDate,
         appointmentType: "follow-up",
         urgency: 2
+      },
+      {
+        _id: "wait-3",
+        patientName: "Aarav Mehta",
+        doctorId: "doctor-demo-1",
+        preferredDate: defaultDate,
+        appointmentType: "consultation",
+        urgency: 5
       }
-    ]
+    ],
+    autopilot: {
+      ignoredSuggestionIds: []
+    }
   };
 }
 
@@ -154,7 +236,11 @@ export function getDemoState() {
     return state;
   }
 
-  return JSON.parse(stored) as DemoState;
+  const parsed = JSON.parse(stored) as DemoState;
+  if (!parsed.autopilot) {
+    parsed.autopilot = { ignoredSuggestionIds: [] };
+  }
+  return parsed;
 }
 
 export function saveDemoState(state: DemoState) {
@@ -198,44 +284,11 @@ export function buildDemoSession(
 function getDayAppointments(state: DemoState, date: string) {
   return state.appointments
     .filter((appointment) => appointment.date === date)
-    .sort((first, second) => minutes(first.time) - minutes(second.time));
+    .sort(byTime);
 }
 
 function getActiveAppointments(state: DemoState, date: string) {
   return getDayAppointments(state, date).filter((appointment) => appointment.status !== "cancelled");
-}
-
-function findConflict(appointments: Appointment[], time: string, duration: number, excludeId?: string) {
-  const start = minutes(time);
-  const end = start + duration;
-
-  return appointments.find((appointment) => {
-    if (appointment._id === excludeId) return false;
-    const candidateStart = minutes(appointment.time);
-    const candidateEnd = candidateStart + appointment.duration;
-    return start < candidateEnd && candidateStart < end;
-  });
-}
-
-function getGapSuggestions(appointments: Appointment[], duration: number, limit = 5) {
-  const suggestions: string[] = [];
-  let cursor = 9 * 60;
-
-  for (const appointment of appointments) {
-    const start = minutes(appointment.time);
-    if (cursor + duration <= start) {
-      suggestions.push(timeFromMinutes(cursor));
-      if (suggestions.length >= limit) return suggestions;
-    }
-    cursor = Math.max(cursor, start + appointment.duration);
-  }
-
-  while (cursor + duration <= 17 * 60 && suggestions.length < limit) {
-    suggestions.push(timeFromMinutes(cursor));
-    cursor += 5;
-  }
-
-  return suggestions;
 }
 
 function getGaps(appointments: Appointment[]) {
@@ -263,6 +316,166 @@ function getGaps(appointments: Appointment[]) {
   }
 
   return gaps;
+}
+
+function getGapSuggestions(appointments: Appointment[], duration: number, limit = 5) {
+  const suggestions: string[] = [];
+  let cursor = 9 * 60;
+
+  for (const appointment of appointments) {
+    const start = minutes(appointment.time);
+    if (cursor + duration <= start) {
+      suggestions.push(timeFromMinutes(cursor));
+      if (suggestions.length >= limit) return suggestions;
+    }
+    cursor = Math.max(cursor, start + appointment.duration);
+  }
+
+  while (cursor + duration <= 17 * 60 && suggestions.length < limit) {
+    suggestions.push(timeFromMinutes(cursor));
+    cursor += 5;
+  }
+
+  return suggestions;
+}
+
+function findConflict(appointments: Appointment[], time: string, duration: number, excludeId?: string) {
+  const start = minutes(time);
+  const end = start + duration;
+
+  return appointments.find((appointment) => {
+    if (appointment._id === excludeId) return false;
+    const candidateStart = minutes(appointment.time);
+    const candidateEnd = candidateStart + appointment.duration;
+    return start < candidateEnd && candidateStart < end;
+  });
+}
+
+function buildPatientVisit(state: DemoState, appointment: Appointment): PatientVisit {
+  return {
+    id: appointment._id,
+    patientName: appointment.patientName,
+    visitDate: appointment.date,
+    doctorName: state.doctor.name,
+    appointmentType: appointment.appointmentType,
+    status: appointment.status
+  };
+}
+
+function buildPatientHistory(state: DemoState, patientName: string) {
+  return state.appointments
+    .filter((appointment) => appointment.patientName === patientName)
+    .sort((first, second) => {
+      if (first.date === second.date) return byTime(first, second);
+      return first.date.localeCompare(second.date);
+    })
+    .map((appointment) => buildPatientVisit(state, appointment));
+}
+
+function buildPatientDirectory(state: DemoState) {
+  return Object.values(
+    state.appointments.reduce<Record<string, ReturnType<typeof buildPatientVisit>[]>>((accumulator, appointment) => {
+      accumulator[appointment.patientName] ??= [];
+      accumulator[appointment.patientName].push(buildPatientVisit(state, appointment));
+      return accumulator;
+    }, {})
+  )
+    .map((visits) => {
+      const ordered = visits.sort((first, second) => first.visitDate.localeCompare(second.visitDate));
+      const latest = ordered[ordered.length - 1];
+      return {
+        name: latest.patientName,
+        latestVisitDate: latest.visitDate,
+        totalVisits: ordered.length,
+        lastStatus: latest.status,
+        doctorName: latest.doctorName
+      };
+    })
+    .sort((first, second) => second.latestVisitDate.localeCompare(first.latestVisitDate));
+}
+
+function buildDigitalTwin(state: DemoState, date: string): DigitalTwinState {
+  const active = getActiveAppointments(state, date);
+  const nowServing = active.find((appointment) => appointment.status === "waiting") ?? null;
+  const nextPatient = active.find((appointment) => appointment.status === "scheduled") ?? null;
+
+  return {
+    consultationRoom: {
+      status: nowServing ? "consulting" : "available",
+      doctorName: state.doctor.name,
+      patientName: nowServing?.patientName ?? null
+    },
+    waitingArea: {
+      count: active.filter((appointment) => appointment.status === "waiting").length,
+      patients: active.filter((appointment) => appointment.status === "waiting").map((appointment) => appointment.patientName)
+    },
+    nextPatient: {
+      patientName: nextPatient?.patientName ?? null,
+      time: nextPatient?.time ?? null,
+      appointmentType: nextPatient?.appointmentType ?? null
+    },
+    queueStatus: {
+      nowServing: nowServing?.patientName ?? null,
+      nextPatient: nextPatient?.patientName ?? null
+    }
+  };
+}
+
+function buildAutopilotSuggestions(state: DemoState, date: string) {
+  const active = getActiveAppointments(state, date);
+  const gaps = getGaps(active);
+  const suggestions: AutopilotSuggestion[] = [];
+
+  for (const gap of gaps.filter((item) => item.minutes >= 10)) {
+    const laterAppointment = active.find((appointment) => minutes(appointment.time) > minutes(gap.end) && appointment.status === "scheduled");
+    if (laterAppointment) {
+      suggestions.push({
+        id: `move-earlier-${laterAppointment._id}-${gap.start}`,
+        type: "move-earlier",
+        title: "Idle gap detected",
+        windowLabel: `${gap.start} - ${gap.end}`,
+        detail: `Move patient ${laterAppointment.patientName} from ${laterAppointment.time}.`,
+        actionLabel: "Apply Fix",
+        appointmentId: laterAppointment._id,
+        suggestedTime: gap.start,
+        status: "pending"
+      });
+    }
+
+    const waitlistCandidate = state.waitlist
+      .filter((entry) => entry.preferredDate === date)
+      .sort((first, second) => second.urgency - first.urgency)
+      .find((entry) => durations[entry.appointmentType] <= gap.minutes);
+
+    if (waitlistCandidate) {
+      suggestions.push({
+        id: `waitlist-${waitlistCandidate._id}-${gap.start}`,
+        type: "waitlist-recovery",
+        title: "Waitlist opportunity",
+        windowLabel: `${gap.start} - ${gap.end}`,
+        detail: `Offer ${gap.start} to ${waitlistCandidate.patientName} from the waitlist.`,
+        actionLabel: "Fill Slot",
+        waitlistEntryId: waitlistCandidate._id,
+        suggestedTime: gap.start,
+        status: "pending"
+      });
+    }
+  }
+
+  const emergencyCount = active.filter((appointment) => appointment.appointmentType === "emergency").length;
+  if (emergencyCount >= 2) {
+    suggestions.push({
+      id: `risk-${date}`,
+      type: "overbook-risk",
+      title: "Overbooking risk",
+      windowLabel: "High-intensity day",
+      detail: `There are ${emergencyCount} emergency visits scheduled. Reserve buffer time after 3 PM.`,
+      actionLabel: "Apply Buffer",
+      status: "pending"
+    });
+  }
+
+  return suggestions.filter((suggestion) => !state.autopilot.ignoredSuggestionIds.includes(suggestion.id)).slice(0, 6);
 }
 
 function buildDashboard(state: DemoState, date: string): DashboardData {
@@ -300,6 +513,9 @@ function buildDashboard(state: DemoState, date: string): DashboardData {
         ...active.slice(-1).map((appointment) => `Consider moving ${appointment.patientName} from ${appointment.time}`)
       ].slice(0, 3)
     },
+    autopilotSuggestions: clone(buildAutopilotSuggestions(state, date)),
+    digitalTwin: clone(buildDigitalTwin(state, date)),
+    patientDirectory: clone(buildPatientDirectory(state)),
     idleInsights: gaps
       .filter((gap) => gap.minutes >= 10)
       .slice(0, 3)
@@ -326,6 +542,10 @@ export function getDemoQueue(date: string): QueueData {
     nextPatient: appointments.find((appointment) => appointment.status === "scheduled") ?? null,
     waitingCount: appointments.filter((appointment) => appointment.status === "waiting").length
   };
+}
+
+export function getDemoPatientHistory(patientName: string) {
+  return clone(buildPatientHistory(getDemoState(), patientName));
 }
 
 export function createDemoAppointment(payload: {
@@ -453,4 +673,47 @@ export function addDemoWaitlist(payload: {
   state.waitlist.push(entry);
   saveDemoState(state);
   return entry;
+}
+
+export function applyDemoAutopilotSuggestion(id: string) {
+  const state = getDemoState();
+  const suggestion = buildAutopilotSuggestions(state, defaultDate).find((item) => item.id === id);
+  if (!suggestion) throw new Error("Suggestion not found");
+
+  if (suggestion.type === "move-earlier" && suggestion.appointmentId && suggestion.suggestedTime) {
+    updateDemoAppointment({
+      id: suggestion.appointmentId,
+      time: suggestion.suggestedTime
+    });
+  }
+
+  if (suggestion.type === "waitlist-recovery" && suggestion.waitlistEntryId && suggestion.suggestedTime) {
+    const waitlistEntry = state.waitlist.find((entry) => entry._id === suggestion.waitlistEntryId);
+    if (!waitlistEntry) throw new Error("Waitlist entry not found");
+
+    createDemoAppointment({
+      patientName: waitlistEntry.patientName,
+      doctorId: waitlistEntry.doctorId,
+      date: waitlistEntry.preferredDate,
+      time: suggestion.suggestedTime,
+      appointmentType: waitlistEntry.appointmentType
+    });
+    state.waitlist = state.waitlist.filter((entry) => entry._id !== waitlistEntry._id);
+    saveDemoState(state);
+  }
+
+  if (suggestion.type === "overbook-risk") {
+    state.autopilot.ignoredSuggestionIds.push(suggestion.id);
+    saveDemoState(state);
+  }
+
+  return clone(suggestion);
+}
+
+export function ignoreDemoAutopilotSuggestion(id: string) {
+  const state = getDemoState();
+  if (!state.autopilot.ignoredSuggestionIds.includes(id)) {
+    state.autopilot.ignoredSuggestionIds.push(id);
+    saveDemoState(state);
+  }
 }
